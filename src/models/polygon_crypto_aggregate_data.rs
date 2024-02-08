@@ -33,7 +33,7 @@ pub struct PolygonCryptoAggregateData {
 
     /// The start time for this aggregate window in Unix milliseconds.
     #[serde(rename = "s")]
-    pub start_time: i64,
+    pub timestamp: i64,
 
     /// The end time for this aggregate window in Unix milliseconds.
     #[serde(rename = "e")]
