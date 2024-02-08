@@ -11,7 +11,8 @@ extern crate timely;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use std::thread;
+use std::{env, thread};
+use dotenv::dotenv;
 
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::Value;
@@ -33,8 +34,9 @@ use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
 use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
-
+use crate::util::event_filters::{EventFilters, TradeSizeFilter, QuotePriceFilter, TradeFilter, FilterCriteria, ParameterizedTradeFilter, FilterValue};
 mod models;
+mod util;
 
 /**
 
@@ -203,7 +205,7 @@ fn run_dynamic_dataflow(event: PolygonEventTypes, worker: &mut timely::worker::W
     worker.dataflow(|scope| {
         let (mut input_handle, stream) = scope.new_input::<PolygonEventTypes>();
 
-        stream.inspect(|x| println!("Data: {:?}", x));
+        // stream.inspect(|x| println!("Data: {:?}", x));
 
         match event.clone() {
             PolygonEventTypes::XtTrade(trade_data) => {
@@ -243,45 +245,6 @@ fn filter_specific_pair(trade: &PolygonCryptoTradeData, pair: &str) -> bool {
     trade.pair == pair
 }
 
-
-trait FilterFunction {
-    fn apply(&self, event: &PolygonEventTypes) -> bool;
-}
-
-struct TradeSizeFilter;
-impl FilterFunction for TradeSizeFilter {
-    fn apply(&self, event: &PolygonEventTypes) -> bool {
-        match event {
-            PolygonEventTypes::XtTrade(trade) => trade.size > 0.005,
-            _ => false,
-        }
-    }
-}
-
-struct QuotePriceFilter;
-impl FilterFunction for QuotePriceFilter {
-    fn apply(&self, event: &PolygonEventTypes) -> bool {
-        match event {
-            PolygonEventTypes::XqQuote(quote) => quote.bid_price > 100.0,
-            _ => false,
-        }
-    }
-}
-
-struct EventFilters {
-    filters: Vec<Arc<dyn FilterFunction>>,
-}
-
-impl EventFilters {
-    pub fn new() -> Self {
-        Self { filters: Vec::new() }
-    }
-
-    pub fn add_filter(&mut self, filter: Arc<dyn FilterFunction>) {
-        self.filters.push(filter);
-    }
-}
-
 fn run_dynamic_dataflowWithFilters(
     event: PolygonEventTypes,
     worker: &mut timely::worker::Worker<timely::communication::Allocator>,
@@ -291,7 +254,7 @@ fn run_dynamic_dataflowWithFilters(
     worker.dataflow(|scope| {
         let (mut input_handle, stream) = scope.new_input::<PolygonEventTypes>();
 
-        stream.inspect(|x| println!("Data: {:?}", x));
+        // stream.inspect(|x| println!("Data: {:?}", x));
 
         input_handle.send(event); // Send the event into the dataflow
 
@@ -316,11 +279,14 @@ Here, incoming events are simply logged using the `.inspect` operator for demons
  */
 #[tokio::main]
 async fn main() {
+    dotenv().ok(); // This loads the variables from .env into the environment
 
     let (sender, receiver) = bounded::<PolygonEventTypes>(5000); // Adjust buffer size as needed
-
     let polygon_ws_url = Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
-    let mut polygon_ws_stream = connect(polygon_ws_url, "EdpUuqshn08VIPoOozwCg6RSE9dVXmxp").await;
+    let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected polygon_api_key to be set");
+    println!("polygon_api_key: {}", polygon_api_key);
+
+    let mut polygon_ws_stream = connect(polygon_ws_url, &polygon_api_key).await;
 
     subscribe_to_polygon_events(
         &mut polygon_ws_stream,
@@ -329,7 +295,6 @@ async fn main() {
         true, // subscribe_trades
         false, // subscribe_quotes
         false, // subscribe_level_2_books
-        // add more flags as needed
     ).await;
 
     thread::spawn(move || {
@@ -345,11 +310,31 @@ async fn main() {
 
                         // Call run_dynamic_dataflow with the specified event and filters
                         let mut filters = EventFilters::new();
-                        let trade_size_filter = Arc::new(TradeSizeFilter {});
-                        let quote_price_filter = Arc::new(QuotePriceFilter {});
+                        // let trade_size_filter = Arc::new(TradeSizeFilter {});
+                        // let quote_price_filter = Arc::new(QuotePriceFilter {});
 
-                        filters.add_filter(trade_size_filter);
-                        filters.add_filter(quote_price_filter);
+                        // Define criteria for both the trade size greater than 0.1 AND the "BTC-USD" pair
+                        let btc_size_criteria = FilterCriteria {
+                            field: "size".to_string(),
+                            operation: ">".to_string(),
+                            value: FilterValue::Number(0.5),
+                        };
+
+                        let btc_pair_criteria = FilterCriteria {
+                            field: "pair".to_string(),
+                            operation: "=".to_string(),
+                            value: FilterValue::Text("BTC-USD".to_string()),
+                        };
+
+
+                        let trade_filter = Arc::new(TradeFilter {});
+
+                        let param_filter = Arc::new(ParameterizedTradeFilter::new(vec![btc_size_criteria, btc_pair_criteria]));
+
+                        // filters.add_filter(trade_size_filter);
+                        // filters.add_filter(quote_price_filter);
+                        // filters.add_filter(trade_filter);
+                        filters.add_filter(param_filter);
 
                         run_dynamic_dataflowWithFilters(event, worker, filters);
 
