@@ -40,11 +40,9 @@ pub struct PolygonCryptoTradeData {
     pub received_timestamp: i64,
 }
 
-
 impl Default for PolygonCryptoTradeData {
     fn default() -> Self {
         PolygonCryptoTradeData {
-
             // initialize fields with default values
             event_type: "".to_string(),
             pair: "".to_string(),

@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
-use crate::models::polygon_event_types::PolygonEventTypes;
-use serde::{Deserialize, Serialize};
-use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 
+use serde::{Deserialize, Serialize};
+
+use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
+use crate::models::polygon_event_types::PolygonEventTypes;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum FilterValue {
@@ -17,66 +19,54 @@ pub struct FilterCriteria {
     pub value: FilterValue,
 }
 
+// This struct now holds a map from currency pairs to their respective criteria.
 pub struct ParameterizedTradeFilter {
-    criteria: Vec<FilterCriteria>,
+    criteria_by_pair: HashMap<String, Vec<FilterCriteria>>,
 }
 
 impl ParameterizedTradeFilter {
-    pub fn new(criteria: Vec<FilterCriteria>) -> Self {
-        ParameterizedTradeFilter { criteria }
+    pub fn new(criteria_by_pair: HashMap<String, Vec<FilterCriteria>>) -> Self {
+        ParameterizedTradeFilter { criteria_by_pair }
     }
 }
 
-/// trait that can work generically with PolygonEventTypes
 pub trait FilterFunction {
     fn apply(&self, event: &PolygonEventTypes) -> bool;
-    // Example helper methods to extract field values and compare them
-    fn extract_numeric_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<f64>;
-    fn extract_string_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<String>;
-    fn compare_numeric(&self, field_value: f64, operation: &str, criterion_value: f64) -> bool;
-    fn compare_text(&self, field_value: &str, operation: &str, criterion_value: &str) -> bool;
 }
 
 impl FilterFunction for ParameterizedTradeFilter {
     fn apply(&self, event: &PolygonEventTypes) -> bool {
-        if let PolygonEventTypes::XtTrade(trade) = event {
-            for criterion in &self.criteria {
-                match &criterion.value {
-                    FilterValue::Number(num_val) => {
-                        if let Some(field_value) = self.extract_numeric_field(&trade, &criterion.field) {
-                            if !self.compare_numeric(field_value, &criterion.operation, num_val.clone()) {
-                                return false;
-                            }
-                        }
-                    },
-                    FilterValue::Text(text_val) => {
-                        if let Some(field_value) = self.extract_string_field(&trade, &criterion.field) {
-                            if !self.compare_text(&field_value, &criterion.operation, text_val) {
-                                return false;
-                            }
-                        }
-                    },
+        match event {
+            PolygonEventTypes::XtTrade(trade) => {
+                if let Some(criteria) = self.criteria_by_pair.get(&trade.pair) {
+                    criteria
+                        .iter()
+                        .all(|criterion| self.meets_criterion(trade, criterion))
+                } else {
+                    true // If no criteria for the pair, pass the trade through
                 }
             }
-            true
-        } else {
-            false
+            _ => false,
         }
     }
+}
 
-    // Example helper methods to extract field values and compare them
-    fn extract_numeric_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<f64> {
-        match field {
-            "price" => Some(trade.clone().price),
-            "size" => Some(trade.clone().size),
-            _ => None,
-        }
-    }
-
-    fn extract_string_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<String> {
-        match field {
-            "pair" => Some(trade.pair.clone()),
-            _ => None,
+impl ParameterizedTradeFilter {
+    fn meets_criterion(&self, trade: &PolygonCryptoTradeData, criterion: &FilterCriteria) -> bool {
+        match &criterion.value {
+            FilterValue::Number(num_val) => match criterion.field.as_str() {
+                "price" => {
+                    self.compare_numeric(trade.clone().price, &criterion.operation, num_val.clone())
+                }
+                "size" => {
+                    self.compare_numeric(trade.clone().size, &criterion.operation, num_val.clone())
+                }
+                _ => false,
+            },
+            FilterValue::Text(text_val) => match criterion.field.as_str() {
+                "pair" => self.compare_text(&trade.pair, &criterion.operation, text_val),
+                _ => false,
+            },
         }
     }
 
@@ -84,7 +74,7 @@ impl FilterFunction for ParameterizedTradeFilter {
         match operation {
             ">" => field_value > criterion_value,
             "<" => field_value < criterion_value,
-            "=" => field_value == criterion_value,
+            "=" => (field_value - criterion_value).abs() < f64::EPSILON,
             _ => false,
         }
     }
@@ -93,112 +83,10 @@ impl FilterFunction for ParameterizedTradeFilter {
         match operation {
             "=" => field_value == criterion_value,
             "!=" => field_value != criterion_value,
-            _ => false, // Other operations might not make sense for strings
-        }
-    }
-}
-
-
-/// Compares a trade's field value with a criterion value based on the operation.
-fn compare(field_value: f64, operation: &str, criterion_value: f64) -> bool {
-    match operation {
-        ">" => field_value > criterion_value,
-        "<" => field_value < criterion_value,
-        "=" => field_value == criterion_value,
-        _ => false,
-    }
-}
-
-/// Implementations of FilterFunction trait for different specific filters.
-/// Each implementation knows to handle its specific data type:
-/// Example Filter to apply over XT Trade Events
-pub struct TradeSizeFilter;
-impl FilterFunction for TradeSizeFilter {
-    fn apply(&self, event: &PolygonEventTypes) -> bool {
-        match event {
-            PolygonEventTypes::XtTrade(trade) => trade.size > 0.005,
             _ => false,
         }
     }
-
-    fn extract_numeric_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<f64> {
-        todo!()
-    }
-
-    fn extract_string_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<String> {
-        todo!()
-    }
-
-    fn compare_numeric(&self, field_value: f64, operation: &str, criterion_value: f64) -> bool {
-        todo!()
-    }
-
-    fn compare_text(&self, field_value: &str, operation: &str, criterion_value: &str) -> bool {
-        todo!()
-    }
 }
-
-/// Example Filter to apply over XQ Quote Events
-pub struct QuotePriceFilter;
-impl FilterFunction for QuotePriceFilter {
-    fn apply(&self, event: &PolygonEventTypes) -> bool {
-        match event {
-            PolygonEventTypes::XqQuote(quote) => quote.bid_price > 100.0,
-            _ => false,
-        }
-    }
-
-    fn extract_numeric_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<f64> {
-        todo!()
-    }
-
-    fn extract_string_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<String> {
-        todo!()
-    }
-
-    fn compare_numeric(&self, field_value: f64, operation: &str, criterion_value: f64) -> bool {
-        todo!()
-    }
-
-    fn compare_text(&self, field_value: &str, operation: &str, criterion_value: &str) -> bool {
-        todo!()
-    }
-}
-
-pub struct TradeFilter;
-impl FilterFunction for TradeFilter {
-    fn apply(&self, event: &PolygonEventTypes) -> bool {
-        match event {
-            PolygonEventTypes::XtTrade(trade) => {
-                match trade.clone().pair.as_str() {
-                    "BTC-USD" => trade.size  > 0.1, // Assuming size is in BTC and 1 BTC = 44k USD
-                    "ETH-USD" => trade.size > 10.0, // Assuming size is in ETH
-                    "SOL-USD" => trade.size > 100.0, // Assuming size is in SOL
-                    _ => false,
-                }
-            },
-            _ => false,
-        }
-    }
-
-    fn extract_numeric_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<f64> {
-        todo!()
-    }
-
-    fn extract_string_field(&self, trade: &PolygonCryptoTradeData, field: &str) -> Option<String> {
-        todo!()
-    }
-
-    fn compare_numeric(&self, field_value: f64, operation: &str, criterion_value: f64) -> bool {
-        todo!()
-    }
-
-    fn compare_text(&self, field_value: &str, operation: &str, criterion_value: &str) -> bool {
-        todo!()
-    }
-}
-
-
 
 pub struct EventFilters {
     pub(crate) filters: Vec<Arc<dyn FilterFunction>>,
@@ -206,7 +94,9 @@ pub struct EventFilters {
 
 impl EventFilters {
     pub fn new() -> Self {
-        Self { filters: Vec::new() }
+        Self {
+            filters: Vec::new(),
+        }
     }
 
     pub fn add_filter(&mut self, filter: Arc<dyn FilterFunction>) {
