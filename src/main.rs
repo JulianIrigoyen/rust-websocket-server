@@ -16,6 +16,8 @@ use std::thread;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::Value;
 use timely::communication::allocator::{Generic, Thread};
+use timely::dataflow::Scope;
+
 use timely::dataflow::operators::{Exchange, Input, Inspect, Probe, ToStream, Filter, Broadcast, Partition};
 use timely::dataflow::InputHandle;
 use timely::execute_from_args;
@@ -242,6 +244,68 @@ fn filter_specific_pair(trade: &PolygonCryptoTradeData, pair: &str) -> bool {
 }
 
 
+trait FilterFunction {
+    fn apply(&self, event: &PolygonEventTypes) -> bool;
+}
+
+struct TradeSizeFilter;
+impl FilterFunction for TradeSizeFilter {
+    fn apply(&self, event: &PolygonEventTypes) -> bool {
+        match event {
+            PolygonEventTypes::XtTrade(trade) => trade.size > 0.005,
+            _ => false,
+        }
+    }
+}
+
+struct QuotePriceFilter;
+impl FilterFunction for QuotePriceFilter {
+    fn apply(&self, event: &PolygonEventTypes) -> bool {
+        match event {
+            PolygonEventTypes::XqQuote(quote) => quote.bid_price > 100.0,
+            _ => false,
+        }
+    }
+}
+
+struct EventFilters {
+    filters: Vec<Arc<dyn FilterFunction>>,
+}
+
+impl EventFilters {
+    pub fn new() -> Self {
+        Self { filters: Vec::new() }
+    }
+
+    pub fn add_filter(&mut self, filter: Arc<dyn FilterFunction>) {
+        self.filters.push(filter);
+    }
+}
+
+fn run_dynamic_dataflowWithFilters(
+    event: PolygonEventTypes,
+    worker: &mut timely::worker::Worker<timely::communication::Allocator>,
+    filters: EventFilters,
+)
+{
+    worker.dataflow(|scope| {
+        let (mut input_handle, stream) = scope.new_input::<PolygonEventTypes>();
+
+        stream.inspect(|x| println!("Data: {:?}", x));
+
+        input_handle.send(event); // Send the event into the dataflow
+
+        // Apply all filters
+        for filter in &filters.filters {
+            let filter_clone = filter.clone();
+            stream.filter(move |x| filter_clone.apply(x))
+                .inspect(|x| println!("Filtered Event: {:?}", x));
+        }
+
+        input_handle.advance_to(1); // Make sure to advance the input handle
+    });
+}
+
 
 /**
 The main async function sets up the WebSocket connection, subscriptions, and spawns a separate thread for the Timely Dataflow computation.
@@ -252,6 +316,7 @@ Here, incoming events are simply logged using the `.inspect` operator for demons
  */
 #[tokio::main]
 async fn main() {
+
     let (sender, receiver) = bounded::<PolygonEventTypes>(5000); // Adjust buffer size as needed
 
     let polygon_ws_url = Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
@@ -267,9 +332,6 @@ async fn main() {
         // add more flags as needed
     ).await;
 
-
-
-
     thread::spawn(move || {
         execute_from_args(std::env::args(), move |worker| {
             let mut input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
@@ -279,7 +341,18 @@ async fn main() {
                 match receiver.recv() {
                     Ok(event) => {
                         // Dynamically handle the event with a dataflow
-                        run_dynamic_dataflow(event, worker);
+                        //run_dynamic_dataflow(event, worker);
+
+                        // Call run_dynamic_dataflow with the specified event and filters
+                        let mut filters = EventFilters::new();
+                        let trade_size_filter = Arc::new(TradeSizeFilter {});
+                        let quote_price_filter = Arc::new(QuotePriceFilter {});
+
+                        filters.add_filter(trade_size_filter);
+                        filters.add_filter(quote_price_filter);
+
+                        run_dynamic_dataflowWithFilters(event, worker, filters);
+
                         worker.step(); // Drive the dataflow forward
                     }
                     Err(_) => {
@@ -289,6 +362,13 @@ async fn main() {
             }
         }).unwrap();
     });
+
+    // // Add trade filters for BTC, ETH, and LINK
+    // filters.add_trade_filter(|trade| trade.pair == "BTC-USD" && trade.size > 0.001);
+    // filters.add_trade_filter(|trade| trade.pair == "ETH-USD" && trade.size > 0.5);
+    // filters.add_trade_filter(|trade| trade.pair == "LINK-USD" && trade.size > 1000.0);
+
+
 
     process_websocket_messages(&mut polygon_ws_stream, sender).await;
 }
