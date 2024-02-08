@@ -1,0 +1,23 @@
+[package]
+name = "rust-websocket-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["full", "io-util", "sync", "rt-multi-thread"] }
+tokio-tungstenite = { version = "*", features = ["native-tls"] }
+
+tungstenite = "0.21.0"
+tokio-postgres = "0.7.2"
+diesel = { version = "2.1.4", features = ["postgres"] }
+timely = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_derive = "1.0"
+log = "0.4.17"
+futures-util = { version = "0.3.28", default-features = false, features = ["sink", "std"] }
+url = "2.5.0"
+futures-channel = "0.3"
+
