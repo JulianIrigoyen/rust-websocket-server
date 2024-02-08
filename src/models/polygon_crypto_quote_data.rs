@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a response from the Crypto Quote WebSocket.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PolygonCryptoQuoteData {
     /// The event type, indicating the type of data (e.g., "XQ" for crypto quotes).
     #[serde(rename = "ev")]

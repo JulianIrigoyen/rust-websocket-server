@@ -20,4 +20,4 @@ log = "0.4.17"
 futures-util = { version = "0.3.28", default-features = false, features = ["sink", "std"] }
 url = "2.5.0"
 futures-channel = "0.3"
-
+crossbeam-channel = "0.5"

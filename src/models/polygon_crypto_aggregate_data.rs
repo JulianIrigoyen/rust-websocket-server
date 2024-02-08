@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents an aggregate data point for a specific cryptocurrency pair over a minute.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PolygonCryptoAggregateData {
     /// The event type, indicating the type of data (e.g., "XA" for aggregates per minute).
     #[serde(rename = "ev")]

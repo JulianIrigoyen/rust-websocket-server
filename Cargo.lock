@@ -759,6 +759,7 @@ dependencies = [
 name = "rust-websocket-server"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "diesel",
  "futures-channel",
  "futures-util",

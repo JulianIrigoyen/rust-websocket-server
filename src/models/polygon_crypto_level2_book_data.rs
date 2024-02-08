@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a response from the Level 2 WebSocket.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PolygonCryptoLevel2BookData {
     /// The event type, indicating the type of data (e.g., "XL2" for Level 2 data).
     #[serde(rename = "ev")]

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a response from the Crypto Trade WebSocket.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PolygonCryptoTradeData {
     /// The event type, indicating the type of data (e.g., "XT" for crypto trades).
     #[serde(rename = "ev")]
