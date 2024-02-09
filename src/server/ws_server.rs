@@ -1,11 +1,9 @@
-// src/ws_server/mod.rs
-
-use tokio::net::TcpListener;
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::accept_async;
-use std::sync::{Arc, Mutex};
-use futures_util::stream::StreamExt;
 use futures_util::sink::SinkExt;
+use futures_util::stream::StreamExt;
+use std::sync::{Arc, Mutex};
+use tokio::net::TcpListener;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 pub struct WebSocketServer {
     client_senders: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>>,
@@ -38,10 +36,9 @@ impl WebSocketServer {
         }
     }
 
-    // Note: Now `handle_connection` takes an additional parameter for the client_senders Arc<Mutex<...>>
     async fn handle_connection(
         stream: tokio::net::TcpStream,
-        client_senders: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>>
+        client_senders: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let ws_stream = accept_async(stream).await?;
 
@@ -50,7 +47,7 @@ impl WebSocketServer {
             senders.push(ws_stream);
         }
 
-        // You might want to keep the connection alive, listen to messages from the client, etc.
+        // Might want to keep the connection alive, listen to messages from the client, etc.
         // For now, just adding the connection to the list
 
         Ok(())

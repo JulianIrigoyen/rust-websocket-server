@@ -8,7 +8,8 @@ As I set up this modest websocket server to get the rust off my Rust, I started 
 
 But bear with me, we’ll go through it and soon you too will be creating dataflows for your streams!
 
-Think of dataflows as extremely efficient pipelines that you can use to transform and process your data. More poetically speaking, you can imagine boring strings flying into a tube where countless hands, each with a specific intent and purpose, do “stuff” on these chains of characters and on the other side, what you get is a juicy, valuable insight. Dataflows allow us to create pipelines with extendable powers like this easily. In this case, I wanted to be able to consume massive amounts of data about the crypto markets (at the time of writing, BTC just hit 45k again. An alt season is coming and market sentiment analysis tools can actually be game changers in these times). So yes, I’m setting up an alert system for my telegram, partially por el amor al arte, partially because there is true value hidden behind these magical character chains we’ll be subscribing to…
+Think of dataflows as extremely efficient pipelines that you can use to transform and process your data. You can imagine boring strings flying into a tube where countless hands, each with a specific intent and purpose, do “stuff” on these chains of characters and on the other side, what you get is valuable insight. 
+Dataflows allow us to create pipelines with extendable powers like this easily. In this case, I wanted to be able to consume massive amounts of data about the crypto markets (at the time of writing, BTC just hit 45k again. An alt season is coming and market sentiment analysis tools can actually be game changers in these times). So yes, I’m setting up an alert system for my telegram, partially por el amor al arte, partially because there is true value hidden behind these magical character chains we’ll be subscribing to…
 
 ---
 
@@ -37,18 +38,45 @@ Now, we need to know the shape that the incoming messages have; otherwise, our a
 ---
 ## Channeling
 
----
-## Dynamic Dataflows
+Messages need to be sent to and from the websocket connections into/out of dataflows. We use crossbeam channels for this
 
----
+```rust
+use crossbeam_channel::{bounded, Sender};
+
+let (sender, receiver) = bounded::<T>(n);
+
+// Continuously read from the channel and process messages
+loop {
+    match receiver.recv() {
+        Ok(message) => {
+        // Process the message
+        // For example, update dataflows, broadcast to clients, etc.
+        },
+        Err(_) => {
+        // Handle the case where the sender is dropped/disconnected
+        break;
+        }
+    }
+}
+```
 
 ## Dynamic Filters
 
-The main motivation behind this functionality is to allow users, like you (and me, I use this stuff), to create the filters they want. As a user, all you need to know is:
+The main motivation behind this functionality is to allow users, to create the filters they want. As a user, all you need to know is:
 - The structure of the data being filtered.
 - The type of operation that you want to perform on the data structure to filter it.
 
 With this in mind, we’ll create a filtering structure that will demand knowing the types being filtered and which operations to apply.
+
+
+There are examples of how you can set up your own filters on (for now) Polygon's data. 
+Moving forward, we will expose an API that will allow you to define and save your own filters,
+which will then be applied on on demand dataflows. 
+
+---
+## Dynamic Dataflows
+
+---
 
 --- 
 ## (In progress) Alerts

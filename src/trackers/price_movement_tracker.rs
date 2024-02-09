@@ -4,16 +4,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Defines a tracker for the price movements of cryptocurrency pairs
-pub struct PriceMovementTracker {
+pub struct PriceActionTracker {
     // A thread-safe (Arc + Mutex) HashMap to store the last prices of cryptocurrency pairs
     // The key is the pair as a String (e.g., "BTC-USD"), and the value is the last price as f64
     last_prices: Arc<Mutex<HashMap<String, f64>>>,
     spike_threshold_percent: f64, // field for spike/drop detection threshold
 }
 
-impl PriceMovementTracker {
+impl PriceActionTracker {
     pub(crate) fn new(spike_threshold_percent: f64) -> Self {
-        PriceMovementTracker {
+        PriceActionTracker {
             last_prices: Arc::new(Mutex::new(HashMap::new())),
             spike_threshold_percent,
         }
@@ -49,7 +49,7 @@ impl PriceMovementTracker {
 
         if price_change_percent.abs() > self.spike_threshold_percent {
             println!(
-                "{} experienced a sudden {} of {:.2}% from the last tick. Last: {}, Current: {}",
+                "{} experienced a {} of {:.2}% from the last tick. Last: {}, Current: {}",
                 aggregate.pair,
                 if price_change_percent > 0.0 {
                     "spike"
@@ -67,11 +67,11 @@ impl PriceMovementTracker {
     }
 }
 
-impl PriceMovementTracker {
+impl PriceActionTracker {
     pub(crate) fn apply(&self, event: &PolygonEventTypes) {
         match event {
             PolygonEventTypes::XaAggregateMinute(aggregate) => self.process(aggregate),
-            //PolygonEventTypes::XasAggregateSecond(aggregate) => self.process(aggregate),
+            PolygonEventTypes::XasAggregateSecond(aggregate) => self.process(aggregate),
             _ => {} // This tracker only processes aggregate data
         }
     }

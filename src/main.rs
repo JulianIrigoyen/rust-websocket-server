@@ -8,21 +8,19 @@
 #![allow(unused_variables)]
 extern crate timely;
 
-use std::{env, thread};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::{env, thread};
 
 use crossbeam_channel::{bounded, Sender};
 use dotenv::dotenv;
 use futures_util::{sink::SinkExt, stream::StreamExt};
+use timely::dataflow::operators::{Filter, Input, Inspect};
 use timely::dataflow::InputHandle;
-use timely::dataflow::operators::{
-    Filter, Input, Inspect,
-};
 use timely::execute_from_args;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
+    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 use url::Url;
 
@@ -32,15 +30,15 @@ use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
-use crate::trackers::price_movement_tracker::PriceMovementTracker;
+use crate::trackers::price_movement_tracker::PriceActionTracker;
 use crate::util::event_filters::{
     EventFilters, FilterCriteria, FilterValue, ParameterizedFilter, PriceMovementFilter,
 };
 
-mod util;
 mod models;
-mod trackers;
 mod server;
+mod trackers;
+mod util;
 
 /**
 
@@ -80,7 +78,6 @@ async fn subscribe_with_parms(
         println!("Subscribed to {}", param);
     }
 }
-
 
 /// Utility function to easily subscribe to polygon events.
 async fn subscribe_to_polygon_events(
@@ -278,8 +275,8 @@ fn run_dynamic_filtered_dataflow(
 
         // Create an input handle and stream for PolygonEventTypes
         input_handle.send(event); // Send the event into the dataflow
-        // Create a new instance of the price movement tracker
-        let price_movement_tracker = PriceMovementTracker::new(5.0);
+                                  // Create a new instance of the price movement tracker
+        let price_movement_tracker = PriceActionTracker::new(0.0001);
         // Inspect each event and apply the tracker's logic
         stream.inspect(move |event| {
             price_movement_tracker.apply(event);
@@ -307,102 +304,106 @@ feeding them into the dataflow computation.
  */
 #[tokio::main]
 async fn main() {
-    //  load the variables from .env into the environment
     dotenv().ok();
-
     let (sender, receiver) = bounded::<PolygonEventTypes>(5000);
 
-    let polygon_ws_url =
-        Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
-
-    let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected polygon_api_key to be set");
-    let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("Expected telegram_bot_token to be set");
+    // Set up WebSocket connection and start listening for messages
+    let polygon_ws_url = Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
+    let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
     let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
     let ws_port = env::var("WS_SERVER_PORT").expect("WS_PORT must be set");
 
-    let mut polygon_ws_stream = connect(polygon_ws_url, &polygon_api_key).await;
+    // This task handles incoming WebSocket messages from the Polygon.io API
+    let ws_message_processing_task = tokio::spawn(async move {
+        // Subscribe to Polygon.io channels here
+        let mut polygon_ws_stream = connect(polygon_ws_url.clone(), &polygon_api_key).await;
 
-    // subscribe_to_polygon_events(
-    //     &mut polygon_ws_stream,
-    //     true,  // subscribe_aggregates_per_minute
-    //     true,  // subscribe_aggregates_per_second
-    //     true,  // subscribe_trades
-    //     false, // subscribe_quotes
-    //     false, // subscribe_level_2_books
-    // )
-    // .await;
+        let subscription_params = [
+            "XT.BTC-USD",  // Trades for BTC-USD
+            "XA.BTC-USD",  // Minute aggregates for BTC-USD
 
-    let params = [
-        "XT.BTC-USD",  // Trades for BTC-USD
-        "XA.BTC-USD",  // Trades for BTC-USD
-        "XT.ETH-USD",  // Trades for ETH-USD
-        "XA.ETH-USD",  // Minute aggregates for ETH-USD
-        "XT.LINK-USD", // Trades for LINK-USD
-        "XAS.ETH-USD", // Trades for LINK-USD
-    ];
+            "XT.ETH-USD",  // Trades for ETH-USD
+            "XA.ETH-USD",  // Minute aggregates for ETH-USD
 
-    subscribe_with_parms(&mut polygon_ws_stream, &params).await;
+            "XT.LINK-USD", // Trades for LINK-USD
+            "XA.LINK-USD", // Minute aggregates for LINK-USD
+        ];
 
-    thread::spawn(move || {
-        execute_from_args(std::env::args(), move |worker| {
-            let input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
+        subscribe_with_parms(&mut polygon_ws_stream, &subscription_params).await;
 
-            // Continuously read from the channel and process messages
-            loop {
-                match receiver.recv() {
-                    Ok(event) => {
-                        // Initialize the criteria for each pair
-
-                        //Define sample XT Trade Event filters
-                        let mut criteria_by_pair = HashMap::new();
-
-                        let btc_criteria = FilterCriteria {
-                            field: "size".to_string(),
-                            operation: ">".to_string(),
-                            value: FilterValue::Number(0.3),
-                        };
-
-                        let eth_criteria = FilterCriteria {
-                            field: "size".to_string(),
-                            operation: ">".to_string(),
-                            value: FilterValue::Number(2.0),
-                        };
-
-                        let link_criteria = FilterCriteria {
-                            field: "size".to_string(),
-                            operation: ">".to_string(),
-                            value: FilterValue::Number(2.0),
-                        };
-
-                        // Insert criteria into the HashMap
-                        criteria_by_pair.insert("BTC-USD".to_string(), vec![btc_criteria]);
-                        criteria_by_pair.insert("ETH-USD".to_string(), vec![eth_criteria]);
-                        criteria_by_pair.insert("LINK-USD".to_string(), vec![link_criteria]);
-
-                        let param_filter = Arc::new(ParameterizedFilter::new(criteria_by_pair));
-
-                        //define XA Aggregate Event filters
-                        let price_movement_filter = Arc::new(PriceMovementFilter::new(0.3)); // Example: 5% threshold
-                        let mut filters = EventFilters::new();
-
-                        filters.add_filter(param_filter);
-                        filters.add_filter(price_movement_filter);
-
-                        run_dynamic_filtered_dataflow(event, worker, filters);
-
-                        worker.step(); // Drive the dataflow forward
-                    }
-                    Err(_) => {
-                        break; // Exit loop if the sender is dropped/disconnected
-                    }
-                }
-            }
-        })
-            .unwrap();
+        // Process incoming messages and send them to the dataflow through the channel
+        process_polygon_websocket(&mut polygon_ws_stream, sender).await;
     });
 
-    //process_polygon_websocket(&mut polygon_ws_stream, sender).await;
+    // This task executes the Timely Dataflow
+    let dataflow_task = tokio::spawn(async move {
+        // Initialize and execute the Timely Dataflow here...
+        thread::spawn(move || {
+            execute_from_args(std::env::args(), move |worker| {
+                let input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
 
-    let ws_server = ws_server::WebSocketServer::new(ws_host, ws_port);
-    ws_server.run().await;
+                // Continuously read from the channel and process messages
+                loop {
+                    match receiver.recv() {
+                        Ok(event) => {
+                            // Initialize the criteria for each pair
+
+                            //Define sample XT Trade Event filters
+                            let mut criteria_by_pair = HashMap::new();
+
+                            let btc_criteria = FilterCriteria {
+                                field: "size".to_string(),
+                                operation: ">".to_string(),
+                                value: FilterValue::Number(0.3),
+                            };
+
+                            let eth_criteria = FilterCriteria {
+                                field: "size".to_string(),
+                                operation: ">".to_string(),
+                                value: FilterValue::Number(2.0),
+                            };
+
+                            let link_criteria = FilterCriteria {
+                                field: "size".to_string(),
+                                operation: ">".to_string(),
+                                value: FilterValue::Number(2.0),
+                            };
+
+                            // Insert criteria into the HashMap
+                            criteria_by_pair.insert("BTC-USD".to_string(), vec![btc_criteria]);
+                            criteria_by_pair.insert("ETH-USD".to_string(), vec![eth_criteria]);
+                            criteria_by_pair.insert("LINK-USD".to_string(), vec![link_criteria]);
+
+                            let param_filter = Arc::new(ParameterizedFilter::new(criteria_by_pair));
+
+                            //define Event filters
+                            //let price_movement_filter = Arc::new(PriceMovementFilter::new(0.3)); // Example: 5% threshold
+                            let mut filters = EventFilters::new();
+
+                            filters.add_filter(param_filter);
+                            // filters.add_filter(price_movement_filter);
+
+                            run_dynamic_filtered_dataflow(event, worker, filters);
+
+                            worker.step(); // Drive the dataflow forward
+                        }
+                        Err(_) => {
+                            break; // Exit loop if the sender is dropped/disconnected
+                        }
+                    }
+                }
+            })
+                .unwrap();
+        });
+        // This involves reading from the `receiver`, processing data, and optionally sending results to the WebSocket server for broadcast
+    });
+
+    // This task runs the WebSocket server for broadcasting processed results
+    let ws_server_task = tokio::spawn(async move {
+        let ws_server = ws_server::WebSocketServer::new(ws_host, ws_port);
+        ws_server.run().await
+    });
+
+    // Wait for all tasks to complete
+    let _ = tokio::try_join!(ws_message_processing_task, dataflow_task, ws_server_task);
 }
