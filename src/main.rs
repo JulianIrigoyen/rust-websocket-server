@@ -31,15 +31,16 @@ use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
 use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::server::ws_server;
 use crate::trackers::price_movement_tracker::PriceMovementTracker;
 use crate::util::event_filters::{
     EventFilters, FilterCriteria, FilterValue, ParameterizedFilter, PriceMovementFilter,
 };
 
+mod util;
 mod models;
 mod trackers;
-mod util;
-mod ws_server;
+mod server;
 
 /**
 
@@ -315,8 +316,10 @@ async fn main() {
         Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
 
     let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected polygon_api_key to be set");
-    let telegram_bot_token =
-        env::var("TELEGRAM_BOT_TOKEN").expect("Expected telegram_bot_token to be set");
+    let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("Expected telegram_bot_token to be set");
+    let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
+    let ws_port = env::var("WS_SERVER_PORT").expect("WS_PORT must be set");
+
     let mut polygon_ws_stream = connect(polygon_ws_url, &polygon_api_key).await;
 
     // subscribe_to_polygon_events(
@@ -398,5 +401,8 @@ async fn main() {
             .unwrap();
     });
 
-    process_polygon_websocket(&mut polygon_ws_stream, sender).await;
+    //process_polygon_websocket(&mut polygon_ws_stream, sender).await;
+
+    let ws_server = ws_server::WebSocketServer::new(ws_host, ws_port);
+    ws_server.run().await;
 }
