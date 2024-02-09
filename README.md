@@ -36,15 +36,13 @@ Now, we need to know the shape that the incoming messages have; otherwise, our a
 
 ---
 ## Channeling
-Here write a few words about how we channel (libs used and patterns)
+
 ---
 ## Dynamic Dataflows
-Here write a few words about how dataflows are created and used. Link to the docs
+
 ---
 
 ## Dynamic Filters
-
-Here mention the main important classes and code snippets with filters
 
 The main motivation behind this functionality is to allow users, like you (and me, I use this stuff), to create the filters they want. As a user, all you need to know is:
 - The structure of the data being filtered.
