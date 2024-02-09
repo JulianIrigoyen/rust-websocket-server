@@ -3,7 +3,6 @@ name = "rust-websocket-server"
 version = "0.1.0"
 edition = "2021"
 authors = ["Julian Martin Irigoyen <martinirigoyenj17@gmail.com>"]
-edition = "2018"
 description = "Websocket Server for PolygonIO - extendable to whatever you want. "
 license = "MIT OR Apache-2.0"
 repository = "git@github.com:JulianIrigoyen/rust-websocket-server.git"

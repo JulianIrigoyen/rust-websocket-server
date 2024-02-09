@@ -39,6 +39,7 @@ use crate::util::event_filters::{
 mod models;
 mod trackers;
 mod util;
+mod ws_server;
 
 /**
 
