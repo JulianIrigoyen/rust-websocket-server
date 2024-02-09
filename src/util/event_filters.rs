@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 
 use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
@@ -84,6 +85,32 @@ impl ParameterizedTradeFilter {
             "=" => field_value == criterion_value,
             "!=" => field_value != criterion_value,
             _ => false,
+        }
+    }
+}
+
+pub struct PriceMovementFilter {
+    threshold_percentage: f64,
+}
+
+impl PriceMovementFilter {
+    pub fn new(threshold_percentage: f64) -> Self {
+        PriceMovementFilter { threshold_percentage }
+    }
+
+    fn apply_to_aggregate(&self, aggregate: &PolygonCryptoAggregateData) -> bool {
+        let price_movement = (aggregate.close - aggregate.open).abs();
+        let percentage_movement = (price_movement / aggregate.open) * 100.0;
+        percentage_movement > self.threshold_percentage
+    }
+}
+
+
+impl FilterFunction for PriceMovementFilter {
+    fn apply(&self, event: &PolygonEventTypes) -> bool {
+        match event {
+            PolygonEventTypes::XaAggregateMinute(aggregate) => self.apply_to_aggregate(aggregate),
+            _ => false, // This filter does not apply to other event types
         }
     }
 }
