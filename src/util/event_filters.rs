@@ -135,17 +135,23 @@ impl FilterFunction for PriceMovementFilter {
     }
 }
 
+/**
+     The EventFilters sruct serves as a container for a collection of filters that are applied to incoming data streams.
+Each filter is encapsulated within an Arc<dyn FilterFunction>, allowing for shared ownership across threads and dynamic dispatch of the apply method defined by the FilterFunction trait.
+*/
 pub struct EventFilters {
     pub(crate) filters: Vec<Arc<dyn FilterFunction>>,
 }
 
 impl EventFilters {
+    ///Creates a new instance of EventFilters with an empty vector of filters. Inits the filter system before any data processing begins.
     pub fn new() -> Self {
         Self {
             filters: Vec::new(),
         }
     }
 
+    ///Allows adding new filters to the EventFilters instance. By taking an Arc<dyn FilterFunction>, it supports adding filters that implement the FilterFunction trait, enabling polymorphism. This design choice allows for different types of filters (e.g., price movement, trade size) to be applied without changing the underlying system architecture.
     pub fn add_filter(&mut self, filter: Arc<dyn FilterFunction>) {
         self.filters.push(filter);
     }

@@ -10,20 +10,16 @@ extern crate timely;
 
 use std::{env, thread};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Sender};
 use dotenv::dotenv;
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use serde_json::Value;
-use timely::communication::allocator::{Generic, Thread};
 use timely::dataflow::InputHandle;
 use timely::dataflow::operators::{
-    Broadcast, Exchange, Filter, Input, Inspect, Partition, Probe, ToStream,
+    Filter, Input, Inspect,
 };
-use timely::dataflow::Scope;
 use timely::execute_from_args;
-use timely::worker::Worker;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
@@ -83,6 +79,8 @@ async fn subscribe_with_parms(
     }
 }
 
+
+/// Utility function to easily subscribe to polygon events.
 async fn subscribe_to_polygon_events(
     ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     subscribe_aggregates_per_minute: bool,
@@ -227,7 +225,7 @@ fn deserialize_message(value: &serde_json::Value) -> Option<PolygonEventTypes> {
     None
 }
 
-
+// Example - how to run a dataflow with a simple filter. This function is given superpowers in its younger brother below
 fn run_dynamic_dataflow(
     event: PolygonEventTypes,
     worker: &mut timely::worker::Worker<timely::communication::Allocator>,
@@ -264,14 +262,6 @@ fn run_dynamic_dataflow(
         // Make sure to advance the input handle to allow the dataflow to make progress
         input_handle.advance_to(1);
     });
-}
-
-fn filter_large_trades(trade: &PolygonCryptoTradeData) -> bool {
-    trade.size > 0.005
-}
-
-fn filter_specific_pair(trade: &PolygonCryptoTradeData, pair: &str) -> bool {
-    trade.pair == pair
 }
 
 fn run_dynamic_filtered_dataflow(
@@ -351,7 +341,7 @@ async fn main() {
 
     thread::spawn(move || {
         execute_from_args(std::env::args(), move |worker| {
-            let mut input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
+            let input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
 
             // Continuously read from the channel and process messages
             loop {
