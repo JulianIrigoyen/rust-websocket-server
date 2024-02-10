@@ -12,7 +12,11 @@ extern crate diesel;
 extern crate dotenv_codegen;
 extern crate timely;
 
-use ethers::prelude::*;
+use ethers::{
+    prelude::abigen,
+    providers::{Http, Provider},
+    types::Address,
+};
 
 use std::{env, thread};
 use std::collections::HashMap;
@@ -21,6 +25,7 @@ use std::sync::Arc;
 use crossbeam_channel::{bounded, Sender};
 use diesel::prelude::*;
 use dotenv::dotenv;
+use ethers::prelude::{Middleware, U64};
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use timely::dataflow::InputHandle;
 use timely::dataflow::operators::{Filter, Input, Inspect};
@@ -32,12 +37,14 @@ use tokio_tungstenite::{
 use url::Url;
 
 use crate::db::db_session_manager::DbSessionManager;
+use crate::models::alchemy_event_types::AlchemyEventTypes;
 use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
 use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
+use crate::subscriber::alchemy_subscriber::AlchemySubscriber;
 use crate::trackers::price_movement_tracker::PriceActionTracker;
 use crate::util::event_filters::{
     EventFilters, FilterCriteria, FilterValue, ParameterizedFilter,
@@ -49,6 +56,8 @@ mod trackers;
 mod util;
 mod db;
 mod schema;
+mod web3;
+mod subscriber;
 
 /**
 
@@ -74,7 +83,7 @@ async fn connect(ws_url: Url, api_key: &str) -> WebSocketStream<MaybeTlsStream<T
 }
 
 /// The `async fn subscribe_with_parms` and `async fn subscribe_to_all_polygon_events` functions manage subscriptions to specific trading data channels.
-async fn subscribe_with_parms(
+async fn subscribe_to_polygon_events_with_params(
     ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     params: &[&str],
 ) {
@@ -187,7 +196,7 @@ It deserializes these messages into strongly-typed Rust structs representing dif
 This deserialization is handled by the `fn deserialize_message` function, which checks each message against known data types and formats.
 Upon successful deserialization, messages are sent to a Timely Dataflow computation for further processing.
  */
-async fn process_polygon_websocket(
+async fn consume_polygon_stream(
     ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     tx: Sender<PolygonEventTypes>,
 ) {
@@ -307,7 +316,7 @@ fn run_dynamic_dataflow(
     });
 }
 
-fn run_dynamic_filtered_dataflow(
+fn run_filtered_polygon_dataflow(
     event: PolygonEventTypes,
     worker: &mut timely::worker::Worker<timely::communication::Allocator>,
     filters: EventFilters,
@@ -335,11 +344,11 @@ fn run_dynamic_filtered_dataflow(
             stream
                 .filter(move |x| filter_clone.apply(x))
                 .inspect(move |x| { // Use `move` to capture variables by value
-                    println!("Filtered Event: {:?}", x);
+                    println!("Filtered Polygon Event: {:?}", x);
 
                     match db_session_manager_cloned.persist_event(x) {
-                        Ok(_) => println!("Event successfully persisted."),
-                        Err(e) => eprintln!("Error persisting event: {:?}", e),
+                        Ok(_) => println!("Polygon Event successfully persisted."),
+                        Err(e) => eprintln!("Error persisting polygon event: {:?}", e),
                     }
                 });
         }
@@ -347,6 +356,18 @@ fn run_dynamic_filtered_dataflow(
         input_handle.advance_to(1); // Make sure to advance the input handle
     });
 }
+
+/**
+The IUniswapV2Pair is a struct that is generated from the abigen!() macro.
+    The IUniswapV2Pair::new() function is used to create a new instance of the contract, taking in an Address and an Arc<M> as arguments, where M is any type that implements the Middleware trait.
+
+    Note that the provider is wrapped in an Arc when being passed into the new() function.
+        It is very common to wrap a provider in an Arc to share the provider across threads.
+ */
+abigen!(
+    IUniswapV2Pair,
+    "[function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)]"
+);
 
 /**
 The main async function sets up the WebSocket connection, subscriptions, and spawns a separate thread for the Timely Dataflow computation.
@@ -358,17 +379,10 @@ feeding them into the dataflow computation.
  */
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    //load env
+    ///Load env vars and connect to DB
     dotenv().ok();
-
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let db_session_manager = Arc::new(DbSessionManager::new(&database_url));
-
-    let ethereum_http_provider_url = env::var("ALCHEMY_HTTP_URL").expect("ALCHEMY_WS_URL must be set");
-
-    let provider = Provider::<Http<>>::try_from(ethereum_http_provider_url)?;
-    let block_number: U64 = provider.get_block_number().await?;
-    println!("{block_number}");
 
     // Attempt to fetch a database connection
     match db_session_manager.get_connection() {
@@ -376,19 +390,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => eprintln!("Failed to connect to the database: {:?}", e),
     }
 
-    //Create channel for events to be sent from the websocket to the dataflow
-    let (sender, receiver) = bounded::<PolygonEventTypes>(5000);
-
-    // Set up websocket connection and start listening for messages
-    let polygon_ws_url_string = env::var("POLYGON_WS_URL").expect("Expected POLYGON_API_KEY to be set");
-    let polygon_ws_url = Url::parse(&*polygon_ws_url_string).expect("Invalid WebSocket URL");
-
-    let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
+    /// Websocket Server Initialization
     let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
     let ws_port = env::var("WS_SERVER_PORT").expect("WS_PORT must be set");
 
+    // This task runs the WebSocket server for broadcasting processed results
+    let ws_server_task = tokio::spawn(async move {
+        let ws_server = ws_server::WebSocketServer::new(ws_host, ws_port);
+        ws_server.run().await
+    });
+
+    /// Web3 Ethereum Node Alchemy Provider Initialization
+    let alchemy_http_url = env::var("ALCHEMY_HTTP_URL").expect("ALCHEMY_HTTP_URL must be set");
+    let alchemy_ws_url = env::var("ALCHEMY_WS_URL").expect("ALCHEMY_WS_URL must be set");
+    let alchemy_api_key = env::var("ALCHEMY_API_KEY").expect("ALCHEMY_API_KEY must be set");
+
+    let (alchemy_event_sender, alchemy_event_receiver) = bounded::<AlchemyEventTypes>(5000);
+    let alchemy_ws_message_processing_task = tokio::spawn(async move {
+        let alchemy_provider = Arc::new(Provider::try_from(format!("{}{}", alchemy_http_url, alchemy_api_key)));
+        let mut alchemy_subscriber = AlchemySubscriber::new(alchemy_ws_url, alchemy_api_key);
+        let mut alchemy_ws_stream = alchemy_subscriber.connect().await;
+
+        alchemy_subscriber.subscribe(&mut alchemy_ws_stream, "alchemy_minedTransactions").await;
+
+        while let Some(message) = alchemy_ws_stream.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    println!("Received message: {}", text);
+                    // Deserialize and process the message as needed
+                }
+                Ok(_) => {} // Handle other message types as needed
+                Err(e) => eprintln!("Error receiving message: {:?}", e),
+            }
+        }
+    });
+
+    let alchemy_dataflow_task = tokio::spawn(async move {
+        // Initialize and execute the dataflow
+        thread::spawn(move || {
+            execute_from_args(env::args(), move |worker| {
+                let input_handle: InputHandle<i64, AlchemyEventTypes> = InputHandle::new();
+
+                // Continuously read from the channel and process messages
+                loop {
+                    // Consume the crossbeam channel with messages from the websocket
+                    match alchemy_event_receiver.recv() {
+                        Ok(event) => {
+
+                            worker.step(); // Drive the dataflow forward
+                        }
+                        Err(_) => {
+                            break; // Exit loop if the sender is dropped/disconnected
+                        }
+                    }
+                }
+            })
+                .unwrap();
+        });
+    });
+    /// PolygonIO Websocket setup
+    //Create channel for events to be sent from the websocket to the dataflow
+    let polygon_ws_url_string = env::var("POLYGON_WS_URL").expect("Expected POLYGON_API_KEY to be set");
+    let polygon_ws_url = Url::parse(&*polygon_ws_url_string).expect("Invalid WebSocket URL");
+    let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
+
+    let (polygon_event_sender, polygon_event_receiver) = bounded::<PolygonEventTypes>(5000);
     // This task handles incoming WebSocket messages from the Polygon.io API
-    let ws_message_processing_task = tokio::spawn(async move {
+    let polygon_ws_message_processing_task = tokio::spawn(async move {
         // Subscribe to Polygon.io channels here
         let mut polygon_ws_stream = connect(polygon_ws_url.clone(), &polygon_api_key).await;
 
@@ -403,14 +471,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "XA.LINK-USD", // Minute aggregates for LINK-USD
         ];
 
-        subscribe_with_parms(&mut polygon_ws_stream, &subscription_params).await;
+        subscribe_to_polygon_events_with_params(&mut polygon_ws_stream, &subscription_params).await;
 
         // Process incoming messages and send them to the dataflow through the channel
-        process_polygon_websocket(&mut polygon_ws_stream, sender).await;
+        consume_polygon_stream(&mut polygon_ws_stream, polygon_event_sender).await;
     });
 
     // This task executes the Timely Dataflow
-    let dataflow_task = tokio::spawn(async move {
+    let polygon_dataflow_task = tokio::spawn(async move {
         // Initialize and execute the dataflow
         thread::spawn(move || {
             execute_from_args(env::args(), move |worker| {
@@ -419,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Continuously read from the channel and process messages
                 loop {
                     // Consume the crossbeam channel with messages from the websocket
-                    match receiver.recv() {
+                    match polygon_event_receiver.recv() {
                         Ok(event) => {
 
                             // Definition of hardcoded filters
@@ -457,7 +525,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             filters.add_filter(param_filter);
 
-                            run_dynamic_filtered_dataflow(event, worker, filters, db_session_manager.clone());
+                            run_filtered_polygon_dataflow(event, worker, filters, db_session_manager.clone());
 
                             worker.step(); // Drive the dataflow forward
                         }
@@ -471,13 +539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     });
 
-    // This task runs the WebSocket server for broadcasting processed results
-    let ws_server_task = tokio::spawn(async move {
-        let ws_server = ws_server::WebSocketServer::new(ws_host, ws_port);
-        ws_server.run().await
-    });
-
     // Wait for all tasks to complete - they won't!
-    let _ = tokio::try_join!(ws_message_processing_task, dataflow_task, ws_server_task);
+    let _ = tokio::try_join!(polygon_ws_message_processing_task, polygon_dataflow_task, ws_server_task);
     Ok(())
 }
