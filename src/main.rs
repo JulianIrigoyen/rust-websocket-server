@@ -87,9 +87,43 @@ async fn subscribe_with_parms(
     }
 }
 
+async fn subscribe_to_binance_events(
+    binance_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    subscribe_agg_trades: bool,
+    subscribe_trades: bool,
+    subscribe_klines: bool,
+) {
+    if subscribe_agg_trades {
+        let agg_trade_sub = Message::Text(r#"{"method":"SUBSCRIBE","params":["btcusdt@aggTrade"],"id":1}"#.to_string());
+        binance_stream
+            .send(agg_trade_sub)
+            .await
+            .expect("Failed to send subscribe message for aggregate trades");
+        println!("Subscribed to aggregate trades");
+    }
+
+    if subscribe_trades {
+        let trades_sub = Message::Text(r#"{"method":"SUBSCRIBE","params":["btcusdt@trade"],"id":2}"#.to_string());
+        binance_stream
+            .send(trades_sub)
+            .await
+            .expect("Failed to send subscribe message for trades");
+        println!("Subscribed to trades");
+    }
+
+    if subscribe_klines {
+        let klines_sub = Message::Text(r#"{"method":"SUBSCRIBE","params":["btcusdt@kline_1m"],"id":3}"#.to_string());
+        binance_stream
+            .send(klines_sub)
+            .await
+            .expect("Failed to send subscribe message for Kline data");
+        println!("Subscribed to Kline data");
+    }
+}
+
 /// Utility function to easily subscribe to polygon events.
 async fn subscribe_to_polygon_events(
-    ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    polygon_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     subscribe_aggregates_per_minute: bool,
     subscribe_aggregates_per_second: bool,
     subscribe_trades: bool,
@@ -99,7 +133,7 @@ async fn subscribe_to_polygon_events(
     if subscribe_aggregates_per_minute {
         let aggregates_per_min_sub =
             Message::Text(r#"{"action":"subscribe","params":"XA.*"}"#.to_string());
-        ws_stream
+        polygon_stream
             .send(aggregates_per_min_sub)
             .await
             .expect("Failed to send subscribe message for aggregates per minute");
@@ -109,7 +143,7 @@ async fn subscribe_to_polygon_events(
     if subscribe_aggregates_per_second {
         let aggregates_per_second_sub =
             Message::Text(r#"{"action":"subscribe","params":"XAS.*"}"#.to_string());
-        ws_stream
+        polygon_stream
             .send(aggregates_per_second_sub)
             .await
             .expect("Failed to send subscribe message for aggregates per second");
@@ -118,16 +152,16 @@ async fn subscribe_to_polygon_events(
 
     if subscribe_trades {
         let trades_sub = Message::Text(r#"{"action":"subscribe","params":"XT.*"}"#.to_string());
-        ws_stream
+        polygon_stream
             .send(trades_sub)
             .await
             .expect("Failed to send subscribe message for all trades");
-        println!("Subscribed to all trades");
+        println!("Subscribed to polygon all trades");
     }
 
     if subscribe_quotes {
         let quotes_sub = Message::Text(r#"{"action":"subscribe","params":"XQ.*"}"#.to_string());
-        ws_stream
+        polygon_stream
             .send(quotes_sub)
             .await
             .expect("Failed to send subscribe message for all quotes");
@@ -137,7 +171,7 @@ async fn subscribe_to_polygon_events(
     if subscribe_level_2_books {
         let level_2_books_sub =
             Message::Text(r#"{"action":"subscribe","params":"XL2.*"}"#.to_string());
-        ws_stream
+        polygon_stream
             .send(level_2_books_sub)
             .await
             .expect("Failed to send subscribe message for all level 2 books");
@@ -339,7 +373,9 @@ async fn main() {
     let (sender, receiver) = bounded::<PolygonEventTypes>(5000);
 
     // Set up websocket connection and start listening for messages
-    let polygon_ws_url = Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
+    let polygon_ws_url_string = env::var("POLYGON_WS_URL").expect("Expected POLYGON_API_KEY to be set");
+    let polygon_ws_url = Url::parse(&*polygon_ws_url_string).expect("Invalid WebSocket URL");
+    
     let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
     let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
     let ws_port = env::var("WS_SERVER_PORT").expect("WS_PORT must be set");
