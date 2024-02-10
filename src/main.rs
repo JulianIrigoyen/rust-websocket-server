@@ -12,6 +12,8 @@ extern crate diesel;
 extern crate dotenv_codegen;
 extern crate timely;
 
+use ethers::prelude::*;
+
 use std::{env, thread};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -355,13 +357,18 @@ The dataflow computation is defined within the `worker.dataflow` closure.
 feeding them into the dataflow computation.
  */
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //load env
     dotenv().ok();
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let db_session_manager = Arc::new(DbSessionManager::new(&database_url));
 
+    let ethereum_http_provider_url = env::var("ALCHEMY_HTTP_URL").expect("ALCHEMY_WS_URL must be set");
+
+    let provider = Provider::<Http<>>::try_from(ethereum_http_provider_url)?;
+    let block_number: U64 = provider.get_block_number().await?;
+    println!("{block_number}");
 
     // Attempt to fetch a database connection
     match db_session_manager.get_connection() {
@@ -375,7 +382,7 @@ async fn main() {
     // Set up websocket connection and start listening for messages
     let polygon_ws_url_string = env::var("POLYGON_WS_URL").expect("Expected POLYGON_API_KEY to be set");
     let polygon_ws_url = Url::parse(&*polygon_ws_url_string).expect("Invalid WebSocket URL");
-    
+
     let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
     let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
     let ws_port = env::var("WS_SERVER_PORT").expect("WS_PORT must be set");
@@ -472,4 +479,5 @@ async fn main() {
 
     // Wait for all tasks to complete - they won't!
     let _ = tokio::try_join!(ws_message_processing_task, dataflow_task, ws_server_task);
+    Ok(())
 }

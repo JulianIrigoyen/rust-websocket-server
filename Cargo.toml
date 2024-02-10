@@ -13,6 +13,9 @@ categories = ["web-programming", "asynchronous",  "crypto", "web3", "finance", "
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ethers = { version = "2.0", features = ["rustls", "ws"] }
+# Flexible concrete Error Reporting type built on std::error::Error with customizable Reports
+eyre = "0.6"
 # low-latency cyclic dataflow computational model, which allows for the development of streaming data processing and iterative computations. This crate provides a framework for writing programs that can process data as it arrives and can also iterate over data for algorithms that refine results over time.
 timely = "0.12"
 # runtime for writing reliable, asynchronous, and slim applications with the Rust programming language. It is built on the async/await syntax for asynchronous programming. The features specified (full, io-util, sync, rt-multi-thread) enable various utilities for I/O, synchronization primitives, and multi-threaded runtime support.
