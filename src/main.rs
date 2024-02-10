@@ -383,7 +383,7 @@ fn run_filtered_alchemy_dataflow(
         input_handle.send(event); // Send the event into the dataflow
 
 
-        let alchemy_whale_tracker = AlchemyWhaleTracker::new(db_session_manager.clone(), 1.0);
+        let alchemy_whale_tracker = AlchemyWhaleTracker::new(db_session_manager.clone(), 10.0);
 
         stream.inspect(move |event| {
             alchemy_whale_tracker.apply(event);
@@ -438,12 +438,14 @@ fn run_filtered_polygon_dataflow(
             stream
                 .filter(move |x| filter_clone.apply(x))
                 .inspect(move |x| { // Use `move` to capture variables by value
-                    println!("Filtered Polygon Event: {:?}", x);
 
-                    match db_session_manager_cloned.persist_event(x) {
-                        Ok(_) => println!("Polygon Event successfully persisted."),
-                        Err(e) => eprintln!("Error persisting polygon event: {:?}", e),
-                    }
+                    // println!("Filtered Polygon Event: {:?}", x);
+
+                    // match db_session_manager_cloned.persist_event(x) {
+                    //     Ok(_) => (),
+                    //         // println!("Polygon Event successfully persisted."),
+                    //     Err(e) => eprintln!("Error persisting polygon event: {:?}", e),
+                    // }
                 });
         }
 
@@ -626,7 +628,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     });
 
-    // Wait for all tasks to complete - they won't!
+    // Wait for all tasks to complete
     let _ = tokio::try_join!(polygon_ws_message_processing_task, polygon_dataflow_task, ws_server_task, alchemy_ws_message_processing_task, alchemy_dataflow_task);
     Ok(())
 }

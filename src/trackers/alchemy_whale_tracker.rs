@@ -25,10 +25,9 @@ impl AlchemyWhaleTracker {
         // If the transaction meets the criteria, store it using the session manager
         if self.meets_whale_criteria(data) {
             println!("WHALE ALERT !");
+            data.params.result.transaction.print_transaction_details();
             // self.db_session_manager.persist_event(); // Assuming this method exists
         }
-
-        data.params.result.transaction.print_transaction_details();
     }
 
     pub fn meets_whale_criteria(&self, data: &AlchemyMinedTransactionData) -> bool {
