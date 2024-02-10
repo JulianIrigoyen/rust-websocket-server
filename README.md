@@ -8,7 +8,8 @@ As I set up this modest websocket server to get the rust off my Rust, I started 
 
 But bear with me, we’ll go through it and soon you too will be creating dataflows for your streams!
 
-Think of dataflows as extremely efficient pipelines that you can use to transform and process your data. More poetically speaking, you can imagine boring strings flying into a tube where countless hands, each with a specific intent and purpose, do “stuff” on these chains of characters and on the other side, what you get is a juicy, valuable insight. Dataflows allow us to create pipelines with extendable powers like this easily. In this case, I wanted to be able to consume massive amounts of data about the crypto markets (at the time of writing, BTC just hit 45k again. An alt season is coming and market sentiment analysis tools can actually be game changers in these times). So yes, I’m setting up an alert system for my telegram, partially por el amor al arte, partially because there is true value hidden behind these magical character chains we’ll be subscribing to…
+Think of dataflows as extremely efficient pipelines that you can use to transform and process your data. You can imagine boring strings flying into a tube where countless hands, each with a specific intent and purpose, do “stuff” on these chains of characters and on the other side, what you get is valuable insight. 
+Dataflows allow us to create pipelines with extendable powers like this easily. In this case, I wanted to be able to consume massive amounts of data about the crypto markets (at the time of writing, BTC just hit 45k again. An alt season is coming and market sentiment analysis tools can actually be game changers in these times). So yes, I’m setting up an alert system for my telegram, partially por el amor al arte, partially because there is true value hidden behind these magical character chains we’ll be subscribing to…
 
 ---
 
@@ -17,7 +18,6 @@ Think of dataflows as extremely efficient pipelines that you can use to transfor
 **The core components of this application include:**
 - Subscription and deserialization of websocket messages.
 - Channeling of parsed data into dataflows.
-- Dynamic dataflow creation for particular events.
 - Dynamic data filter application.
 - Dynamic alert system.
 
@@ -37,20 +37,82 @@ Now, we need to know the shape that the incoming messages have; otherwise, our a
 ---
 ## Channeling
 
----
-## Dynamic Dataflows
+Messages need to be sent to and from the websocket connections into/out of dataflows. We use crossbeam channels for this
 
----
+```rust
+use crossbeam_channel::{bounded, Sender};
+
+let (sender, receiver) = bounded::<T>(n);
+
+// Continuously read from the channel and process messages
+loop {
+    match receiver.recv() {
+        Ok(message) => {
+        // Process the message
+        // For example, update dataflows, broadcast to clients, etc.
+        },
+        Err(_) => {
+        // Handle the case where the sender is dropped/disconnected
+        break;
+        }
+    }
+}
+```
 
 ## Dynamic Filters
 
-The main motivation behind this functionality is to allow users, like you (and me, I use this stuff), to create the filters they want. As a user, all you need to know is:
+The main motivation behind this functionality is to allow users, to create the filters they want. As a user, all you need to know is:
 - The structure of the data being filtered.
 - The type of operation that you want to perform on the data structure to filter it.
 
 With this in mind, we’ll create a filtering structure that will demand knowing the types being filtered and which operations to apply.
 
+
+There are examples of how you can set up your own filters on (for now) Polygon's data. 
+Moving forward, we will expose an API that will allow you to define and save your own filters,
+which will then be applied on on demand dataflows.
+
 --- 
 ## (In progress) Alerts
     Currently working on adding alerts with telegram
+---
+
+
+---
+## DB & Diesel
+
+Write the first migration file in the migrations directory generated from running the  ```diesel setup``` command.
+This directory is usually placed at the root of your project, along your src directory. 
+
+If the migrations directory doesn't exist, you can create it manually. When you run ```diesel migration generate```,
+it will create the migration file in this directory.
+
+[[WIP]]When you add a migration to your Diesel project and rebuild your Docker image,
+the migration file will be included in the Docker image. When the Docker container starts up, if it detects that there are pending migrations,
+it will automatically apply them to the database.
+
+Timescale is a postgres extension that helps us deal with time-series data. More on this coming soon.
+
+Setup timescale - needs psql server :
+```brew tap timescale/tap```
+```brew install timescaledb```
+```timescaledb-tune --quiet --yes```
+```./timescaledb_move.sh```
+
+We will be using Diesel as ORM to interface with our timescaledb. Define a DATABASE_URL in your .env. Remember that you also need to create a database and probably a user for your application, and a schema to keep things tidy. 
+Execute this before running  the migrations. Check the samepl init-db.sql in the /migrations folder. Then, to set up diesel:
+
+1. ```cargo install diesel_cli --no-default-features --features postgres```
+2. ```diesel setup```
+3. ```diesel migration run```
+
+
+- Dockerized version: WIP
+
+```docker exec -it rust-websocket-server-db-1 psql -U iriuser -d iridb```
+
+```
+docker-compose up db &&
+docker exec -it rust-websocket-server-db-1 psql -U iriuser -d iridb
+```
 ---

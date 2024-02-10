@@ -31,3 +31,17 @@ pub struct PolygonCryptoLevel2BookData {
     #[serde(rename = "a")]
     pub ask_prices: Vec<Vec<f64>>,
 }
+
+impl Default for PolygonCryptoLevel2BookData {
+    fn default() -> Self {
+        Self {
+            event_type: "".to_string(),
+            pair: "".to_string(),
+            timestamp: 0,
+            received_timestamp: 0,
+            exchange_id: 0,
+            bid_prices: Vec::new(),
+            ask_prices: Vec::new(),
+        }
+    }
+}
