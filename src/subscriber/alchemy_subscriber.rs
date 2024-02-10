@@ -1,16 +1,14 @@
-use futures_util::{StreamExt, SinkExt};
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
-use url::Url;
+use futures_util::SinkExt;
 use serde_json::json;
-
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream};
+use url::Url;
 
 pub struct AlchemySubscriber {
     ws_url: String,
 }
 
 impl AlchemySubscriber {
-
     pub fn new(url: String, api_key: String) -> Self {
         let ws_url = format!("{}{}", url, api_key);
         AlchemySubscriber { ws_url }
@@ -25,22 +23,19 @@ impl AlchemySubscriber {
         ws_stream
     }
 
-    pub async fn subscribe(&mut self, ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>, params: &str) {
+    pub async fn subscribe(&mut self, ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>, method: &str, params: Vec<serde_json::Value>) {
         let subscribe_message = Message::Text(
             serde_json::to_string(&json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "eth_subscribe",
-            "params": [params, {
-                // Optionally add filters here
-            }]
-        }))
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_subscribe",
+                "params": params
+            }))
                 .expect("Failed to serialize subscription message")
         );
 
-        ws_stream.send(subscribe_message).await.expect("Failed to subscribe to alchemy_minedTransactions");
-        println!("Subscribed to Alchemy mined transactions");
+        ws_stream.send(subscribe_message).await.expect("Failed to subscribe");
+        let param_strs: Vec<String> = params.iter().map(|p| p.to_string()).collect();
+        println!("Subscribed to Alchemy Websocket events: {} ", param_strs.join(", "));
     }
-
-    // Add a processing function here if needed
 }

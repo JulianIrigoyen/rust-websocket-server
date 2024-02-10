@@ -4,16 +4,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Defines a tracker for the price movements of cryptocurrency pairs
-pub struct PriceActionTracker {
+pub struct PolygonPriceActionTracker {
     // A thread-safe (Arc + Mutex) HashMap to store the last prices of cryptocurrency pairs
     // The key is the pair as a String (e.g., "BTC-USD"), and the value is the last price as f64
     last_prices: Arc<Mutex<HashMap<String, f64>>>,
     spike_threshold_percent: f64, // field for spike/drop detection threshold
 }
 
-impl PriceActionTracker {
+impl PolygonPriceActionTracker {
     pub(crate) fn new(spike_threshold_percent: f64) -> Self {
-        PriceActionTracker {
+        PolygonPriceActionTracker {
             last_prices: Arc::new(Mutex::new(HashMap::new())),
             spike_threshold_percent,
         }
@@ -67,7 +67,7 @@ impl PriceActionTracker {
     }
 }
 
-impl PriceActionTracker {
+impl PolygonPriceActionTracker {
     pub(crate) fn apply(&self, event: &PolygonEventTypes) {
         match event {
             PolygonEventTypes::XaAggregateMinute(aggregate) => self.process(aggregate),

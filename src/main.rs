@@ -10,26 +10,30 @@
 extern crate diesel;
 #[macro_use]
 extern crate dotenv_codegen;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate timely;
-
-use ethers::{
-    prelude::abigen,
-    providers::{Http, Provider},
-    types::Address,
-};
 
 use std::{env, thread};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossbeam_channel::{bounded, Sender};
-use diesel::prelude::*;
 use dotenv::dotenv;
-use ethers::prelude::{Middleware, U64};
+use ethers::{
+    prelude::abigen,
+    providers::{Http, Provider},
+    types::Address,
+};
+use ethers::prelude::U64;
 use futures_util::{sink::SinkExt, stream::StreamExt};
+use serde_json::{Error, json, Value};
+use timely::communication::allocator::Generic;
 use timely::dataflow::InputHandle;
-use timely::dataflow::operators::{Filter, Input, Inspect};
+use timely::dataflow::operators::{Filter, Input, Inspect, ToStream};
 use timely::execute_from_args;
+use timely::worker::Worker;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
@@ -38,6 +42,7 @@ use url::Url;
 
 use crate::db::db_session_manager::DbSessionManager;
 use crate::models::alchemy_event_types::AlchemyEventTypes;
+use crate::models::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
 use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
 use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
@@ -45,7 +50,8 @@ use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
 use crate::subscriber::alchemy_subscriber::AlchemySubscriber;
-use crate::trackers::price_movement_tracker::PriceActionTracker;
+use crate::trackers::alchemy_whale_tracker::AlchemyWhaleTracker;
+use crate::trackers::polygon_price_action_tracker::PolygonPriceActionTracker;
 use crate::util::event_filters::{
     EventFilters, FilterCriteria, FilterValue, ParameterizedFilter,
 };
@@ -197,27 +203,27 @@ This deserialization is handled by the `fn deserialize_message` function, which 
 Upon successful deserialization, messages are sent to a Timely Dataflow computation for further processing.
  */
 async fn consume_polygon_stream(
-    ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    polygon_ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     tx: Sender<PolygonEventTypes>,
 ) {
-    println!("Starting to process WebSocket messages");
-    while let Some(message) = ws_stream.next().await {
+    println!("Starting to process Polygon WebSocket messages");
+    while let Some(message) = polygon_ws_stream.next().await {
         match message {
             Ok(msg) => {
                 if let Message::Text(text) = msg {
-                    let value: Result<serde_json::Value, _> = serde_json::from_str(&text);
+                    let value: Result<Value, _> = serde_json::from_str(&text);
                     match value {
                         Ok(val) => {
                             // Check if the message is an array and process each message individually
                             if val.is_array() {
                                 for message in val.as_array().unwrap() {
-                                    if let Some(event) = deserialize_message(message) {
+                                    if let Some(event) = deserialize_polygon_message(message) {
                                         tx.send(event).expect("Failed to send event to dataflow");
                                     }
                                 }
                             } else {
                                 // Process a single message
-                                if let Some(event) = deserialize_message(&val) {
+                                if let Some(event) = deserialize_polygon_message(&val) {
                                     tx.send(event).expect("Failed to send event to dataflow");
                                 }
                             }
@@ -231,7 +237,7 @@ async fn consume_polygon_stream(
     }
 }
 
-fn deserialize_message(value: &serde_json::Value) -> Option<PolygonEventTypes> {
+fn deserialize_polygon_message(value: &Value) -> Option<PolygonEventTypes> {
     match value["ev"].as_str() {
         Some("XQ") => {
             if let Ok(quote_data) = serde_json::from_value::<PolygonCryptoQuoteData>(value.clone())
@@ -277,10 +283,58 @@ fn deserialize_message(value: &serde_json::Value) -> Option<PolygonEventTypes> {
     None
 }
 
+
+async fn consume_alchemy_stream(
+    alchemy_ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    tx: Sender<AlchemyEventTypes>,
+) {
+    println!("Starting to process Alchemy WebSocket messages");
+    while let Some(message) = alchemy_ws_stream.next().await {
+        match message {
+            Ok(msg) => {
+                if let Message::Text(text) = msg {
+                    let value: Result<Value, _> = serde_json::from_str(&text);
+                    match value {
+                        Ok(val) => {
+                            // Check if the message is an array and process each message individually
+                            if val.is_array() {
+                                for message in val.as_array().unwrap() {
+                                    if let Some(event) = deserialize_alchemy_message(message) {
+                                        tx.send(event).expect("Failed to send alchemy event to dataflow");
+                                    }
+                                }
+                            } else {
+                                // Process a single message
+                                if let Some(event) = deserialize_alchemy_message(&val) {
+                                    tx.send(event).expect("Failed to send event to dataflow");
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("Error deserializing alchemy message: {:?}", e),
+                    }
+                }
+            }
+            Err(e) => eprintln!("Error receiving message: {:?}", e),
+        }
+    }
+}
+
+fn deserialize_alchemy_message(value: &Value) -> Option<AlchemyEventTypes> {
+    match serde_json::from_value::<AlchemyMinedTransactionData>(value.clone()) {
+        Ok(transaction_data) => {
+            Some(AlchemyEventTypes::AlchemyMinedTransactions(transaction_data))
+        }
+        Err(e) => {
+            eprintln!("Error deserializing alchemy message: {:?}", e);
+            None
+        }
+    }
+}
+
 // Example - how to run a dataflow with a simple filter. This function is given superpowers in its younger brother below
 fn run_dynamic_dataflow(
     event: PolygonEventTypes,
-    worker: &mut timely::worker::Worker<timely::communication::Allocator>,
+    worker: &mut Worker<timely::communication::Allocator>,
 ) {
     worker.dataflow(|scope| {
         let (mut input_handle, stream) = scope.new_input::<PolygonEventTypes>();
@@ -316,9 +370,49 @@ fn run_dynamic_dataflow(
     });
 }
 
+fn run_filtered_alchemy_dataflow(
+    event: AlchemyEventTypes,
+    worker: &mut Worker<timely::communication::Allocator>,
+    filters: EventFilters,
+    db_session_manager: Arc<DbSessionManager>,
+) {
+    worker.dataflow(|scope| {
+        let (mut input_handle, stream) = scope.new_input::<AlchemyEventTypes>();
+
+        // println!("Processing Alchemy Event: {:?}", event);
+        input_handle.send(event); // Send the event into the dataflow
+
+
+        let alchemy_whale_tracker = AlchemyWhaleTracker::new(db_session_manager.clone(), 1.0);
+
+        stream.inspect(move |event| {
+            alchemy_whale_tracker.apply(event);
+        });
+
+        // for filter in &filters.filters {
+        //     let filter_clone = filter.clone();
+        //     let db_session_manager_cloned = db_session_manager.clone();
+        //
+        //     stream
+        //         .filter(move |x| filter_clone.apply(x))
+        //         .inspect(move |x| {
+        //             println!("Filtered Alchemy Event: {:?}", x);
+        //
+        //             match db_session_manager_cloned.persist_event(x) {
+        //                 Ok(_) => println!("Alchemy Event successfully persisted."),
+        //                 Err(e) => eprintln!("Error persisting alchemy event: {:?}", e),
+        //             }
+        //         });
+        // }
+
+        input_handle.advance_to(1);
+    });
+}
+
+
 fn run_filtered_polygon_dataflow(
     event: PolygonEventTypes,
-    worker: &mut timely::worker::Worker<timely::communication::Allocator>,
+    worker: &mut Worker<timely::communication::Allocator>,
     filters: EventFilters,
     db_session_manager: Arc<DbSessionManager>,
 ) {
@@ -330,7 +424,7 @@ fn run_filtered_polygon_dataflow(
         // Create an input handle and stream for PolygonEventTypes
         input_handle.send(event); // Send the event into the dataflow
         // Create a new instance of the price movement tracker
-        let price_movement_tracker = PriceActionTracker::new(0.0001);
+        let price_movement_tracker = PolygonPriceActionTracker::new(0.0001);
         // Inspect each event and apply the tracker's logic
         stream.inspect(move |event| {
             price_movement_tracker.apply(event);
@@ -400,33 +494,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ws_server.run().await
     });
 
-    /// Web3 Ethereum Node Alchemy Provider Initialization
+    /// Ethereum Alchemy websocket processing task
     let alchemy_http_url = env::var("ALCHEMY_HTTP_URL").expect("ALCHEMY_HTTP_URL must be set");
     let alchemy_ws_url = env::var("ALCHEMY_WS_URL").expect("ALCHEMY_WS_URL must be set");
     let alchemy_api_key = env::var("ALCHEMY_API_KEY").expect("ALCHEMY_API_KEY must be set");
 
     let (alchemy_event_sender, alchemy_event_receiver) = bounded::<AlchemyEventTypes>(5000);
+
     let alchemy_ws_message_processing_task = tokio::spawn(async move {
-        let alchemy_provider = Arc::new(Provider::try_from(format!("{}{}", alchemy_http_url, alchemy_api_key)));
+        let alchemy_http_provider = Arc::new(Provider::try_from(format!("{}{}", alchemy_http_url, alchemy_api_key)));
         let mut alchemy_subscriber = AlchemySubscriber::new(alchemy_ws_url, alchemy_api_key);
         let mut alchemy_ws_stream = alchemy_subscriber.connect().await;
+        alchemy_subscriber.subscribe(&mut alchemy_ws_stream, "alchemy_minedTransactions", vec![json!("alchemy_minedTransactions")]).await;
 
-        alchemy_subscriber.subscribe(&mut alchemy_ws_stream, "alchemy_minedTransactions").await;
-
-        while let Some(message) = alchemy_ws_stream.next().await {
-            match message {
-                Ok(Message::Text(text)) => {
-                    println!("Received message: {}", text);
-                    // Deserialize and process the message as needed
-                }
-                Ok(_) => {} // Handle other message types as needed
-                Err(e) => eprintln!("Error receiving message: {:?}", e),
-            }
-        }
+        consume_alchemy_stream(&mut alchemy_ws_stream, alchemy_event_sender).await
     });
 
+
+    /// Alchemy Dataflow task
+    let alchemy_db_session_manager = db_session_manager.clone();
     let alchemy_dataflow_task = tokio::spawn(async move {
-        // Initialize and execute the dataflow
         thread::spawn(move || {
             execute_from_args(env::args(), move |worker| {
                 let input_handle: InputHandle<i64, AlchemyEventTypes> = InputHandle::new();
@@ -436,7 +523,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Consume the crossbeam channel with messages from the websocket
                     match alchemy_event_receiver.recv() {
                         Ok(event) => {
-
+                            run_filtered_alchemy_dataflow(event, worker, EventFilters::new(), alchemy_db_session_manager.clone());
                             worker.step(); // Drive the dataflow forward
                         }
                         Err(_) => {
@@ -444,11 +531,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-            })
-                .unwrap();
+            }).unwrap();
         });
     });
-    /// PolygonIO Websocket setup
+
+    /// PolygonIO Websocket processing task
     //Create channel for events to be sent from the websocket to the dataflow
     let polygon_ws_url_string = env::var("POLYGON_WS_URL").expect("Expected POLYGON_API_KEY to be set");
     let polygon_ws_url = Url::parse(&*polygon_ws_url_string).expect("Invalid WebSocket URL");
@@ -477,7 +564,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         consume_polygon_stream(&mut polygon_ws_stream, polygon_event_sender).await;
     });
 
-    // This task executes the Timely Dataflow
+    /// PolygonIO Dataflow Task
     let polygon_dataflow_task = tokio::spawn(async move {
         // Initialize and execute the dataflow
         thread::spawn(move || {
@@ -540,6 +627,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Wait for all tasks to complete - they won't!
-    let _ = tokio::try_join!(polygon_ws_message_processing_task, polygon_dataflow_task, ws_server_task);
+    let _ = tokio::try_join!(polygon_ws_message_processing_task, polygon_dataflow_task, ws_server_task, alchemy_ws_message_processing_task, alchemy_dataflow_task);
     Ok(())
 }
