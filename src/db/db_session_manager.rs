@@ -1,59 +1,77 @@
-use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
-use diesel::result::Error;
-use r2d2::{Pool, PooledConnection};
-
-use crate::models::*;
+use diesel::r2d2::ConnectionManager;
+use r2d2::{Error, PooledConnection};
+use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon_event_types::PolygonEventTypes;
-use crate::ToDiesel;
+use crate::schema::NewPolygonCryptoTradeData;
+use crate::schema::polygon_crypto_trade_data::dsl::polygon_crypto_trade_data;
+
+type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
+
+pub struct DbSessionManager {
+    pool: DbPool,
+}
 
 impl DbSessionManager {
-    pub fn new() -> Self {
-        // Load the database connection URL from the environment using dotenv_codegen
-        let database_url = dotenv!("DATABASE_URL");
-
-        // Create a connection manager for the PostgreSQL database
+    pub fn new(database_url: &str) -> Self {
         let manager = ConnectionManager::<PgConnection>::new(database_url);
-
-        // Create a connection pool using the connection manager
-        let pool = Pool::builder()
+        let pool = r2d2::Pool::builder()
             .build(manager)
-            .expect("Failed to create database connection pool");
-
+            .expect("Failed to create pool.");
         DbSessionManager { pool }
     }
 
-    pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, diesel::r2d2::PoolError> {
+    pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, Error> {
         self.pool.get()
     }
-    pub fn persist_event(&self, event: &PolygonEventTypes) -> Result<(), Error> {
-        let connection = self.get_connection()?;
 
-        // Match on the event type to determine which table to insert into
-        match event {
-            PolygonEventTypes::Level2BookData(level2_book_data) => {
-                diesel::insert_into(polygon_crypto_level2_book_data::table)
-                    .values(level2_book_data.to_diesel())
-                    .execute(&mut connection)?;
-            }
-            PolygonEventTypes::AggregateData(aggregate_data) => {
-                diesel::insert_into(polygon_crypto_aggregate_data::table)
-                    .values(aggregate_data.to_diesel())
-                    .execute(&mut connection)?;
-            }
-            PolygonEventTypes::QuoteData(quote_data) => {
-                diesel::insert_into(polygon_crypto_quote_data::table)
-                    .values(quote_data.to_diesel())
-                    .execute(&mut connection)?;
-            }
-            PolygonEventTypes::TradeData(trade_data) => {
-                diesel::insert_into(polygon_crypto_trade_data::table)
-                    .values(trade_data.to_diesel())
-                    .execute(&mut connection)?;
-            }
+
+    pub fn persist_event(&self, event: &PolygonEventTypes) -> Result<usize, diesel::result::Error> {
+
+        let mut conn = self.get_connection().unwrap(); // Assume this method fetches a DB connection
+
+        // Example conversion for one variant; implement for others as needed
+        let new_event = match event {
+            PolygonEventTypes::XtTrade(trade_data) => {
+                NewPolygonCryptoTradeData {
+                    event_type: "XT".to_string(),
+                    pair: trade_data.pair.clone(),
+                    price: trade_data.price,
+                    timestamp: trade_data.timestamp,
+                    size: trade_data.size,
+                    conditions: serde_json::Value::Array(Vec::new()),
+                    trade_id: trade_data.trade_id.clone(),
+                    exchange_id: trade_data.exchange_id,
+                    received_timestamp: trade_data.received_timestamp,
+                }
+            },
+            // Handle other variants...
+            _ => unimplemented!(),
+        };
+
+        // Insert the new event into the database
+        diesel::insert_into(polygon_crypto_trade_data)
+            .values(&new_event)
+            .execute(&mut conn)
+    }
+
+}
+
+// Conversion trait implementations, assuming you have these structs
+impl From<&PolygonCryptoTradeData> for NewPolygonCryptoTradeData {
+    fn from(trade_data: &PolygonCryptoTradeData) -> Self {
+        NewPolygonCryptoTradeData {
+            event_type: trade_data.event_type.clone(),
+            pair: trade_data.pair.clone(),
+            price: trade_data.price,
+            timestamp: trade_data.timestamp,
+            size: trade_data.size,
+            conditions: serde_json::to_value(&trade_data.conditions).expect("Failed to serialize conditions"),
+            trade_id: trade_data.trade_id.clone(),
+            exchange_id: trade_data.exchange_id,
+            received_timestamp: trade_data.received_timestamp,
         }
-
-        Ok(())
     }
 }
+
+// Repeat for other data types...

@@ -18,7 +18,6 @@ Dataflows allow us to create pipelines with extendable powers like this easily. 
 **The core components of this application include:**
 - Subscription and deserialization of websocket messages.
 - Channeling of parsed data into dataflows.
-- Dynamic dataflow creation for particular events.
 - Dynamic data filter application.
 - Dynamic alert system.
 
@@ -71,14 +70,49 @@ With this in mind, we’ll create a filtering structure that will demand knowing
 
 There are examples of how you can set up your own filters on (for now) Polygon's data. 
 Moving forward, we will expose an API that will allow you to define and save your own filters,
-which will then be applied on on demand dataflows. 
-
----
-## Dynamic Dataflows
-
----
+which will then be applied on on demand dataflows.
 
 --- 
 ## (In progress) Alerts
     Currently working on adding alerts with telegram
+---
+
+
+---
+## DB & Diesel
+
+Write the first migration file in the migrations directory generated from running the  ```diesel setup``` command.
+This directory is usually placed at the root of your project, along your src directory. 
+
+If the migrations directory doesn't exist, you can create it manually. When you run ```diesel migration generate```,
+it will create the migration file in this directory.
+
+[[WIP]]When you add a migration to your Diesel project and rebuild your Docker image,
+the migration file will be included in the Docker image. When the Docker container starts up, if it detects that there are pending migrations,
+it will automatically apply them to the database.
+
+Timescale is a postgres extension that helps us deal with time-series data. More on this coming soon.
+
+Setup timescale - needs psql server :
+```brew tap timescale/tap```
+```brew install timescaledb```
+```timescaledb-tune --quiet --yes```
+```./timescaledb_move.sh```
+
+We will be using Diesel as ORM to interface with our timescaledb. Define a DATABASE_URL in your .env. Remember that you also need to create a database and probably a user for your application, and a schema to keep things tidy. 
+Execute this before running  the migrations. Check the samepl init-db.sql in the /migrations folder. Then, to set up diesel:
+
+1. ```cargo install diesel_cli --no-default-features --features postgres```
+2. ```diesel setup```
+3. ```diesel migration run```
+
+
+- Dockerized version: WIP
+
+```docker exec -it rust-websocket-server-db-1 psql -U iriuser -d iridb```
+
+```
+docker-compose up db &&
+docker exec -it rust-websocket-server-db-1 psql -U iriuser -d iridb
+```
 ---

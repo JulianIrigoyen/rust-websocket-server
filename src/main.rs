@@ -6,24 +6,30 @@
 // `url` for URL parsing.
 // Custom model definitions for deserializing JSON messages.
 #![allow(unused_variables)]
+#[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate dotenv_codegen;
 extern crate timely;
 
+use std::{env, thread};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::{env, thread};
 
 use crossbeam_channel::{bounded, Sender};
+use diesel::prelude::*;
 use dotenv::dotenv;
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use timely::dataflow::operators::{Filter, Input, Inspect};
 use timely::dataflow::InputHandle;
+use timely::dataflow::operators::{Filter, Input, Inspect};
 use timely::execute_from_args;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
+    connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream,
 };
 use url::Url;
 
+use crate::db::db_session_manager::DbSessionManager;
 use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
 use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
@@ -32,13 +38,15 @@ use crate::models::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
 use crate::trackers::price_movement_tracker::PriceActionTracker;
 use crate::util::event_filters::{
-    EventFilters, FilterCriteria, FilterValue, ParameterizedFilter, PriceMovementFilter,
+    EventFilters, FilterCriteria, FilterValue, ParameterizedFilter,
 };
 
 mod models;
 mod server;
 mod trackers;
 mod util;
+mod db;
+mod schema;
 
 /**
 
@@ -242,7 +250,7 @@ fn run_dynamic_dataflow(
                 stream
                     .filter(|x| {
                         //in this part, how can i invoke functions like large eth trades of more than 0.5 eth in size
-                        //add this filter for the 10 most important cryypto
+                        //add this filter for the 10 most important crypto
                         if let PolygonEventTypes::XtTrade(trade) = x {
                             trade.size > 0.005 // Check trade size
                         } else {
@@ -267,6 +275,7 @@ fn run_dynamic_filtered_dataflow(
     event: PolygonEventTypes,
     worker: &mut timely::worker::Worker<timely::communication::Allocator>,
     filters: EventFilters,
+    db_session_manager: Arc<DbSessionManager>,
 ) {
     worker.dataflow(|scope| {
         let (mut input_handle, stream) = scope.new_input::<PolygonEventTypes>();
@@ -275,7 +284,7 @@ fn run_dynamic_filtered_dataflow(
 
         // Create an input handle and stream for PolygonEventTypes
         input_handle.send(event); // Send the event into the dataflow
-                                  // Create a new instance of the price movement tracker
+        // Create a new instance of the price movement tracker
         let price_movement_tracker = PriceActionTracker::new(0.0001);
         // Inspect each event and apply the tracker's logic
         stream.inspect(move |event| {
@@ -285,9 +294,18 @@ fn run_dynamic_filtered_dataflow(
         // Apply all filters
         for filter in &filters.filters {
             let filter_clone = filter.clone();
+            let db_session_manager_cloned = db_session_manager.clone(); // Clone for use in the closure
+
             stream
                 .filter(move |x| filter_clone.apply(x))
-                .inspect(|x| println!("Filtered Event: {:?}", x));
+                .inspect(move |x| { // Use `move` to capture variables by value
+                    println!("Filtered Event: {:?}", x);
+
+                    match db_session_manager_cloned.persist_event(x) {
+                        Ok(_) => println!("Event successfully persisted."),
+                        Err(e) => eprintln!("Error persisting event: {:?}", e),
+                    }
+                });
         }
 
         input_handle.advance_to(1); // Make sure to advance the input handle
@@ -304,10 +322,23 @@ feeding them into the dataflow computation.
  */
 #[tokio::main]
 async fn main() {
+    //load env
     dotenv().ok();
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let db_session_manager = Arc::new(DbSessionManager::new(&database_url));
+
+
+    // Attempt to fetch a database connection
+    match db_session_manager.get_connection() {
+        Ok(_) => println!("Successfully connected to the database."),
+        Err(e) => eprintln!("Failed to connect to the database: {:?}", e),
+    }
+
+    //Create channel for events to be sent from the websocket to the dataflow
     let (sender, receiver) = bounded::<PolygonEventTypes>(5000);
 
-    // Set up WebSocket connection and start listening for messages
+    // Set up websocket connection and start listening for messages
     let polygon_ws_url = Url::parse("wss://socket.polygon.io/crypto").expect("Invalid WebSocket URL");
     let polygon_api_key = env::var("POLYGON_API_KEY").expect("Expected POLYGON_API_KEY to be set");
     let ws_host = env::var("WS_SERVER_HOST").expect("WS_HOST must be set");
@@ -337,18 +368,20 @@ async fn main() {
 
     // This task executes the Timely Dataflow
     let dataflow_task = tokio::spawn(async move {
-        // Initialize and execute the Timely Dataflow here...
+        // Initialize and execute the dataflow
         thread::spawn(move || {
-            execute_from_args(std::env::args(), move |worker| {
+            execute_from_args(env::args(), move |worker| {
                 let input_handle: InputHandle<i64, PolygonEventTypes> = InputHandle::new();
 
                 // Continuously read from the channel and process messages
                 loop {
+                    // Consume the crossbeam channel with messages from the websocket
                     match receiver.recv() {
                         Ok(event) => {
-                            // Initialize the criteria for each pair
 
-                            //Define sample XT Trade Event filters
+                            // Definition of hardcoded filters
+
+                            // sample XT Trade Event filters
                             let mut criteria_by_pair = HashMap::new();
 
                             let btc_criteria = FilterCriteria {
@@ -377,13 +410,11 @@ async fn main() {
                             let param_filter = Arc::new(ParameterizedFilter::new(criteria_by_pair));
 
                             //define Event filters
-                            //let price_movement_filter = Arc::new(PriceMovementFilter::new(0.3)); // Example: 5% threshold
                             let mut filters = EventFilters::new();
 
                             filters.add_filter(param_filter);
-                            // filters.add_filter(price_movement_filter);
 
-                            run_dynamic_filtered_dataflow(event, worker, filters);
+                            run_dynamic_filtered_dataflow(event, worker, filters, db_session_manager.clone());
 
                             worker.step(); // Drive the dataflow forward
                         }
@@ -395,7 +426,6 @@ async fn main() {
             })
                 .unwrap();
         });
-        // This involves reading from the `receiver`, processing data, and optionally sending results to the WebSocket server for broadcast
     });
 
     // This task runs the WebSocket server for broadcasting processed results
@@ -404,6 +434,6 @@ async fn main() {
         ws_server.run().await
     });
 
-    // Wait for all tasks to complete
+    // Wait for all tasks to complete - they won't!
     let _ = tokio::try_join!(ws_message_processing_task, dataflow_task, ws_server_task);
 }

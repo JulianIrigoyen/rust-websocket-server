@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Julian Martin Irigoyen <martinirigoyenj17@gmail.com>"]
 description = "Websocket Server for PolygonIO - extendable to whatever you want. "
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "git@github.com:JulianIrigoyen/rust-websocket-server.git"
 readme = "README.md"
 keywords = ["web", "websocket", "async", "polygon", "crypto", "web3", "rust"]
@@ -22,7 +22,10 @@ tungstenite = "0.21.0"
 # asynchronous WebSocket client and server library built on top of Tokio. It uses Tungstenite for WebSocket protocol support and provides async/await APIs for WebSocket communication. The native-tls feature enables TLS support for secure WebSocket connections.
 tokio-tungstenite = { version = "*", features = ["native-tls"] }
 # safe, extensible ORM and query builder for Rust. Diesel allows you to interact with databases in a Rustacean way, focusing on safety and expressiveness. The postgres feature enables support for the PostgreSQL database
-diesel = { version = "2.1.4", features = ["postgres"] }
+diesel = { version = "2.1.4", features = ["postgres", "r2d2", "serde_json"] }
+r2d2 = "0.8.9"
+
+
 #  framework for serializing and deserializing Rust data structures efficiently and generically. The derive feature enables the use of derive macros (Serialize, Deserialize) to automatically implement the serialization and deserialization code for custom data structures.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -37,3 +40,4 @@ url = "2.5.0"
 crossbeam-channel = "0.5"
 #Loads environment variables from a .env file into the process's environment variables.
 dotenv = "0.15.0"
+dotenv_codegen = "0.15.0"
