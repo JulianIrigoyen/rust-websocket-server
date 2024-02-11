@@ -24,15 +24,13 @@ pub struct WebSocketSubscriber<B: SubscriptionBuilder> {
 }
 
 impl<B: SubscriptionBuilder> WebSocketSubscriber<B> {
-    // Adjust the constructor to include the authentication method
     pub fn new(ws_url: String, api_key: Option<String>, auth_method: AuthMethod, builder: B) -> Self {
         Self { ws_url, api_key, auth_method, builder }
     }
 
     pub async fn connect(&self) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Box<dyn Error>> {
-        // Modify URL if necessary based on the auth method
 
-        println!("CONNECTING {:?}", self.ws_url);
+        // println!("CONNECTING {:?}", self.ws_url);
         let final_url = match self.auth_method {
             AuthMethod::QueryParam => {
                 if let Some(ref key) = self.api_key {
@@ -48,7 +46,6 @@ impl<B: SubscriptionBuilder> WebSocketSubscriber<B> {
         let (mut ws_stream, _) = connect_async(url).await?;
         println!("Connected to WebSocket :: {}", final_url);
 
-        // Authenticate using a message if required
         if let AuthMethod::Message = self.auth_method {
             self.authenticate(&mut ws_stream).await?;
         }
@@ -56,7 +53,6 @@ impl<B: SubscriptionBuilder> WebSocketSubscriber<B> {
         Ok(ws_stream)
     }
 
-    // Keep the authentication method for services that require sending a message
     async fn authenticate(&self, ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> Result<(), Box<dyn Error>> {
         if let Some(ref api_key) = self.api_key {
             let auth_message = Message::Text(json!({
@@ -87,7 +83,6 @@ pub struct PolygonSubscriptionBuilder;
 pub struct BinanceSubscriptionBuilder;
 pub struct AlchemySubscriptionBuilder;
 
-// Correct implementation for PolygonSubscriptionBuilder
 impl SubscriptionBuilder for PolygonSubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {
         params.iter().map(|&(param, ref topics)| {
@@ -98,7 +93,6 @@ impl SubscriptionBuilder for PolygonSubscriptionBuilder {
     }
 }
 
-// Updated BinanceSubscriptionBuilder to correctly handle multiple topics
 impl SubscriptionBuilder for BinanceSubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {
         params.iter().flat_map(|&(base, ref topics)| {
@@ -112,7 +106,6 @@ impl SubscriptionBuilder for BinanceSubscriptionBuilder {
     }
 }
 
-// No changes needed for AlchemySubscriptionBuilder if it was already correctly implemented
 impl SubscriptionBuilder for AlchemySubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {
         params.iter().map(|(chain, topics)| {

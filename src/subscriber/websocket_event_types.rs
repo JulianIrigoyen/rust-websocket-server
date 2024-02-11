@@ -4,7 +4,7 @@ use crate::models::alchemy::alchemy_event_types::AlchemyEventTypes;
 use crate::models::alchemy::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
 use crate::models::binance::binance_event_types::BinanceEventTypes;
 use crate::models::polygon::polygon_event_types::PolygonEventTypes;
-
+///Trait used for event deserialization
 pub trait WebsocketEventTypes: Sized {
     // Returns a descriptive name or type of the event.
     fn event_type(&self) -> String;

@@ -28,7 +28,7 @@ impl AlchemyWhaleTracker {
         // If the transaction meets the criteria, store it using the session manager
         if self.meets_whale_criteria(data) {
             data.params.result.transaction.print_transaction_details();
-            // self.db_session_manager.persist_event(); // Assuming this method exists
+            // self.db_session_manager.persist_event();
         }
     }
 
@@ -43,31 +43,31 @@ impl AlchemyWhaleTracker {
             }
         }
     }
-
-    pub async fn process_new(&self, data: &AlchemyMinedTransactionData) {
-        let decoder = EthTxDecoder::new();
-
-        // Check for ERC-20 transfer transactions where the value is 0x0
-        if let Some(value_str) = &data.params.result.transaction.value {
-            let value = U256::from_str_radix(value_str.trim_start_matches("0x"), 16).unwrap_or_else(|_| U256::zero());
-
-            // Process only if transaction value is 0 (potential ERC-20 transfer)
-            if value.is_zero() {
-                if let Some(input) = &data.params.result.transaction.input {
-                    if let Some(token_info_with_price) = decoder.decode_tx_input_and_fetch_price(input, "eth").await {
-                        println!("ERC-20 Transfer Detected with Price Info");
-                        println!("Token Address: {}, Recipient: {}, Amount: {}, USD Price: {}", token_info_with_price.token_address, token_info_with_price.recipient, token_info_with_price.amount, token_info_with_price.usd_price);
-                    }
-                }
-            } else {
-                // For non-ERC-20 transfers (ETH transfers), check if the value exceeds the whale threshold
-                if value > self.whale_threshold {
-                    println!("WHALE ALERT! ETH Transfer Detected");
-                    println!("From: {}, To: {}, Value: {}", data.params.result.transaction.from.as_ref().unwrap_or(&"Unknown".to_string()), data.params.result.transaction.to.as_ref().unwrap_or(&"Unknown".to_string()), value);
-                }
-            }
-        }
-    }
+    // todo
+    // pub async fn process_new(&self, data: &AlchemyMinedTransactionData) {
+    //     let decoder = EthTxDecoder::new();
+    //
+    //     // Check for ERC-20 transfer transactions where the value is 0x0
+    //     if let Some(value_str) = &data.params.result.transaction.value {
+    //         let value = U256::from_str_radix(value_str.trim_start_matches("0x"), 16).unwrap_or_else(|_| U256::zero());
+    //
+    //         // Process only if transaction value is 0 (potential ERC-20 transfer)
+    //         if value.is_zero() {
+    //             if let Some(input) = &data.params.result.transaction.input {
+    //                 if let Some(token_info_with_price) = decoder.decode_tx_input_and_fetch_price(input, "eth").await {
+    //                     println!("ERC-20 Transfer Detected with Price Info");
+    //                     println!("Token Address: {}, Recipient: {}, Amount: {}, USD Price: {}", token_info_with_price.token_address, token_info_with_price.recipient, token_info_with_price.amount, token_info_with_price.usd_price);
+    //                 }
+    //             }
+    //         } else {
+    //             // For non-ERC-20 transfers (ETH transfers), check if the value exceeds the whale threshold
+    //             if value > self.whale_threshold {
+    //                 println!("WHALE ALERT! ETH Transfer Detected");
+    //                 println!("From: {}, To: {}, Value: {}", data.params.result.transaction.from.as_ref().unwrap_or(&"Unknown".to_string()), data.params.result.transaction.to.as_ref().unwrap_or(&"Unknown".to_string()), value);
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn process_working(&self, data: &AlchemyMinedTransactionData) {
         let decoder = EthTxDecoder::new();

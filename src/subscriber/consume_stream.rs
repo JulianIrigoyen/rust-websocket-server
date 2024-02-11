@@ -6,7 +6,7 @@ use std::error::Error as StdError; // Renamed for clarity
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
 
-use crate::subscribers::websocket_event_types::WebsocketEventTypes;
+use crate::subscriber::websocket_event_types::WebsocketEventTypes;
 
 // Standalone async function for consuming the stream.
 pub async fn consume_stream<T: WebsocketEventTypes + Send + 'static>(
