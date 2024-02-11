@@ -51,12 +51,14 @@ use crate::models::polygon::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
 use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
-use crate::subscriber::alchemy_subscriber::AlchemySubscriber;
+use crate::subscribers::alchemy_subscriber::AlchemySubscriber;
+use crate::subscribers::websocket_subscriber::WebSocketSubscriber;
 use crate::trackers::alchemy_whale_tracker::AlchemyWhaleTracker;
 use crate::trackers::polygon_price_action_tracker::PolygonPriceActionTracker;
 use crate::util::event_filters::{
     EventFilters, FilterCriteria, FilterValue, ParameterizedFilter,
 };
+use crate::subscribers::stream_consumer::{consume_stream};
 
 mod db;
 mod util;
@@ -66,7 +68,7 @@ mod http;
 mod trackers;
 mod schema;
 mod web3;
-mod subscriber;
+mod subscribers;
 
 /**
 
@@ -509,15 +511,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let alchemy_ws_url = env::var("ALCHEMY_WS_URL").expect("ALCHEMY_WS_URL must be set");
         let alchemy_api_key = env::var("ALCHEMY_API_KEY").expect("ALCHEMY_API_KEY must be set");
 
+        // Setup channels for the specific event types we want
         let (alchemy_event_sender, alchemy_event_receiver) = bounded::<AlchemyEventTypes>(5000);
 
-        let alchemy_ws_message_processing_task = tokio::spawn(async move {
-            let alchemy_http_provider = Arc::new(Provider::try_from(format!("{}{}", alchemy_http_url, alchemy_api_key)));
-            let mut alchemy_subscriber = AlchemySubscriber::new(alchemy_ws_url, alchemy_api_key);
-            let mut alchemy_ws_stream = alchemy_subscriber.connect().await;
-            alchemy_subscriber.subscribe(&mut alchemy_ws_stream, "alchemy_minedTransactions", vec![json!("alchemy_minedTransactions")]).await;
+        let alchemy_ws_url_with_key = format!("{}{}", alchemy_ws_url, alchemy_api_key);
 
-            consume_alchemy_stream(&mut alchemy_ws_stream, alchemy_event_sender).await
+
+        let sub_alchemy_eth_mined_tx = Message::Text(
+            serde_json::to_string(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_subscribe",
+            "params": ["alchemy_minedTransactions"]
+        })).expect("Failed to serialize subscription message")
+        );
+        let alchemy_subscriber = WebSocketSubscriber::new(alchemy_ws_url_with_key, vec![sub_alchemy_eth_mined_tx]);
+
+        let alchemy_ws_message_processing_task = tokio::spawn(async move {
+            // let alchemy_http_provider = Arc::new(Provider::try_from(format!("{}{}", alchemy_http_url, alchemy_api_key)));
+            // let mut alchemy_subscriber = AlchemySubscriber::new(alchemy_ws_url, alchemy_api_key);
+            // let mut alchemy_ws_stream = alchemy_subscriber.connect().await;
+            // alchemy_subscriber.subscribe(&mut alchemy_ws_stream, "alchemy_minedTransactions", vec![json!("alchemy_minedTransactions")]).await;
+            //
+            // consume_alchemy_stream(&mut alchemy_ws_stream, alchemy_event_sender).await
+            // Connect and subscribe using the WebSocketSubscriber
+            let mut ws_stream = alchemy_subscriber.connect().await.expect("Failed to connect to Alchemy WebSocket");
+            alchemy_subscriber.subscribe(&mut ws_stream).await.expect("Failed to subscribe");
+
+            // Consume the stream
+            consume_stream::<AlchemyEventTypes>(&mut ws_stream, alchemy_event_sender).await;
         });
 
 
@@ -713,6 +735,33 @@ Method Signature: balanceOf(address _owner)
 Hash (Keccak-256): 70a08231
 Description: This method returns the token balance of _owner. Like allowance, it is used for querying state and not for initiating transactions.
 Description: This method returns the token balance of _owner. Like allowance, it is used for querying state and not for initiating transactions.
+    let alchemy_http_url = env::var("ALCHEMY_HTTP_URL").expect("ALCHEMY_HTTP_URL must be set");
+    let alchemy_ws_url = env::var("ALCHEMY_WS_URL").expect("ALCHEMY_WS_URL must be set");
+    let alchemy_api_key = env::var("ALCHEMY_API_KEY").expect("ALCHEMY_API_KEY must be set");
+
+    let (alchemy_event_sender, alchemy_event_receiver) = bounded::<AlchemyEventTypes>(5000);
+
+    // Initialize WebSocketSubscriber with Alchemy WebSocket URL and subscription message(s)
+    let alchemy_ws_url_with_key = format!("{}{}", alchemy_ws_url, alchemy_api_key);
+    let subscribe_message = Message::Text(
+        serde_json::to_string(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_subscribe",
+            "params": ["alchemy_minedTransactions"]
+        })).expect("Failed to serialize subscription message")
+    );
+
+    let alchemy_subscriber = WebSocketSubscriber::new(alchemy_ws_url_with_key, vec![subscribe_message]);
+
+    let alchemy_ws_message_processing_task = tokio::spawn(async move {
+        // Connect and subscribe using the WebSocketSubscriber
+        let mut ws_stream = alchemy_subscriber.connect().await.expect("Failed to connect to Alchemy WebSocket");
+        alchemy_subscriber.subscribe(&mut ws_stream).await.expect("Failed to subscribe");
+
+        // Consume the stream
+        StreamConsumer::consume_stream::<AlchemyEventTypes>(&mut ws_stream, alchemy_event_sender).await;
+    });
 
 
 */

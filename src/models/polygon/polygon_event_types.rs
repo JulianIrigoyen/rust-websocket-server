@@ -3,7 +3,9 @@ use crate::models::polygon::polygon_crypto_level2_book_data::PolygonCryptoLevel2
 use crate::models::polygon::polygon_crypto_quote_data::PolygonCryptoQuoteData;
 use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
 
-#[derive(Debug, Clone)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PolygonEventTypes {
     XaAggregateMinute(PolygonCryptoAggregateData),
     XasAggregateSecond(PolygonCryptoAggregateData),

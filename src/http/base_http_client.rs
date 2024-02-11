@@ -1,4 +1,4 @@
-use reqwest::{Client as ReqwestClient, Error as ReqwestError, Response};
+use reqwest::{Client as ReqwestClient, Response};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use crate::http::http_client_error::HttpClientError;

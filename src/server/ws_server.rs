@@ -4,7 +4,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 use tokio::time::{interval, Duration};
-use uuid::{Uuid}; // Add `uuid` to your `Cargo.toml`
 
 pub struct WebSocketServer {
     host: String,

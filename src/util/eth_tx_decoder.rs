@@ -11,7 +11,7 @@ pub struct EthTxDecoder {
 
 impl EthTxDecoder {
 
-    const TRANSFER_KECCAK_SIGNATURE: &str = "0xa9059cbb";
+    const transfer_keccak_signature: &str = "0xa9059cbb";
 
     pub fn new() -> Self {
         let mut known_token_addresses = HashMap::new();
@@ -32,7 +32,7 @@ impl EthTxDecoder {
 
     pub fn decode_tx_input(&self, input: &str) -> Option<(Address, U256)> {
         match input.get(..10) {
-            Some(TRANSFER_KECCAK_SIGNATURE) => self.decode_erc20_transfer(input),
+            Some(transfer_keccak_signature) => self.decode_erc20_transfer(input),
             _ => None, // Extend this match arm to handle other types
         }
     }
