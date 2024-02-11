@@ -1,8 +1,8 @@
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;
 use r2d2::{Error, PooledConnection};
-use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
-use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
+use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 use crate::schema::NewPolygonCryptoTradeData;
 use crate::schema::polygon_crypto_trade_data::dsl::polygon_crypto_trade_data;
 

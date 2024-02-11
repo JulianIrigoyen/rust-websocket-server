@@ -42,14 +42,14 @@ use tokio_tungstenite::{
 use url::Url;
 
 use crate::db::db_session_manager::DbSessionManager;
-use crate::models::alchemy_event_types::AlchemyEventTypes;
-use crate::models::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
-use crate::models::moralis_erc20_token_price::TokenPriceResponse;
-use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
-use crate::models::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
-use crate::models::polygon_crypto_quote_data::PolygonCryptoQuoteData;
-use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
-use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::models::alchemy::alchemy_event_types::AlchemyEventTypes;
+use crate::models::alchemy::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
+use crate::models::moralis::moralis_erc20_token_price_response::MoralisERC20TokenPriceResponse;
+use crate::models::polygon::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
+use crate::models::polygon::polygon_crypto_level2_book_data::PolygonCryptoLevel2BookData;
+use crate::models::polygon::polygon_crypto_quote_data::PolygonCryptoQuoteData;
+use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
+use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 use crate::server::ws_server;
 use crate::subscriber::alchemy_subscriber::AlchemySubscriber;
 use crate::trackers::alchemy_whale_tracker::AlchemyWhaleTracker;

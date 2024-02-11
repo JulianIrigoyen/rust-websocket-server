@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
+use crate::models::polygon::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 use serde::{Deserialize, Serialize};
 
-use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
-use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
+use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 
 ///This class structure illustrates a highly modular and scalable approach to filtering real-time financial data streams.
 

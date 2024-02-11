@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TokenPriceResponse {
+pub struct MoralisERC20TokenPriceResponse {
     token_name: String,
     token_symbol: String,
     token_logo: String,

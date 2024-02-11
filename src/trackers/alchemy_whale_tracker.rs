@@ -4,8 +4,8 @@ use ethers::types::U256;
 
 use crate::DbSessionManager;
 use crate::http::moralis_http_client::MoralisHttpClient;
-use crate::models::alchemy_event_types::AlchemyEventTypes;
-use crate::models::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
+use crate::models::alchemy::alchemy_event_types::AlchemyEventTypes;
+use crate::models::alchemy::alchemy_mined_transaction_data::AlchemyMinedTransactionData;
 use crate::util::eth_tx_decoder::EthTxDecoder;
 use crate::util::eth_tx_decoder::TokenInfoWithPrice;
 

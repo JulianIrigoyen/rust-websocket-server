@@ -1,6 +1,6 @@
 use crate::http::base_http_client::BaseHttpClient;
 use crate::http::http_client_error::HttpClientError;
-use crate::models::moralis_erc20_token_price::TokenPriceResponse;
+use crate::models::moralis::moralis_erc20_token_price_response::MoralisERC20TokenPriceResponse;
 
 
 pub struct MoralisHttpClient {
@@ -20,7 +20,7 @@ impl MoralisHttpClient {
         }
     }
 
-    pub async fn get_token_price(&self, address: &str, chain: &str, include_percent_change: bool) -> Result<TokenPriceResponse, HttpClientError> {
+    pub async fn get_token_price(&self, address: &str, chain: &str, include_percent_change: bool) -> Result<MoralisERC20TokenPriceResponse, HttpClientError> {
         // Construct the full endpoint URL
         let endpoint = format!("erc20/{}/price", address);
         let url = format!("{}/{}", &self.base_url, endpoint);
@@ -31,7 +31,7 @@ impl MoralisHttpClient {
         ];
 
         // Use the base HTTP client to send the request
-        self.base_client.get_with_query::<TokenPriceResponse>(&url, &query).await
+        self.base_client.get_with_query::<MoralisERC20TokenPriceResponse>(&url, &query).await
     }
 
     // Add other Moralis-specific methods here...

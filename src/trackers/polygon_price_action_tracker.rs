@@ -1,5 +1,5 @@
-use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
-use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::models::polygon::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
+use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
