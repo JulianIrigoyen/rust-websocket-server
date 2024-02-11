@@ -383,7 +383,8 @@ fn run_filtered_alchemy_dataflow(
         input_handle.send(event); // Send the event into the dataflow
 
 
-        let alchemy_whale_tracker = AlchemyWhaleTracker::new(db_session_manager.clone(), 10.0);
+        let alchemy_whale_tracker =
+            AlchemyWhaleTracker::new(db_session_manager.clone(), 50.0);
 
         stream.inspect(move |event| {
             alchemy_whale_tracker.apply(event);
@@ -423,7 +424,8 @@ fn run_filtered_polygon_dataflow(
 
         // Create an input handle and stream for PolygonEventTypes
         input_handle.send(event); // Send the event into the dataflow
-        // Create a new instance of the price movement tracker
+
+        // Create a new instance of the price movement tracker with very low threshold to see it in action
         let price_movement_tracker = PolygonPriceActionTracker::new(0.0001);
         // Inspect each event and apply the tracker's logic
         stream.inspect(move |event| {
@@ -439,13 +441,13 @@ fn run_filtered_polygon_dataflow(
                 .filter(move |x| filter_clone.apply(x))
                 .inspect(move |x| { // Use `move` to capture variables by value
 
-                    // println!("Filtered Polygon Event: {:?}", x);
+                    println!("Filtered Polygon Event: {:?}", x);
 
-                    // match db_session_manager_cloned.persist_event(x) {
-                    //     Ok(_) => (),
-                    //         // println!("Polygon Event successfully persisted."),
-                    //     Err(e) => eprintln!("Error persisting polygon event: {:?}", e),
-                    // }
+                    match db_session_manager_cloned.persist_event(x) {
+                        Ok(_) => (),
+                            // println!("Polygon Event successfully persisted."),
+                        Err(e) => eprintln!("Error persisting polygon event: {:?}", e),
+                    }
                 });
         }
 
@@ -558,6 +560,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             "XT.LINK-USD", // Trades for LINK-USD
             "XA.LINK-USD", // Minute aggregates for LINK-USD
+
+            "XT.SOL-USD", // Trades for SOL-USD
+            "XA.SOL-USD", // Minute aggregates for SOL-USD
         ];
 
         subscribe_to_polygon_events_with_params(&mut polygon_ws_stream, &subscription_params).await;
@@ -587,25 +592,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let btc_criteria = FilterCriteria {
                                 field: "size".to_string(),
                                 operation: ">".to_string(),
-                                value: FilterValue::Number(0.3),
+                                value: FilterValue::Number(1.0),
                             };
 
                             let eth_criteria = FilterCriteria {
                                 field: "size".to_string(),
                                 operation: ">".to_string(),
-                                value: FilterValue::Number(2.0),
+                                value: FilterValue::Number(10.0),
                             };
 
                             let link_criteria = FilterCriteria {
                                 field: "size".to_string(),
                                 operation: ">".to_string(),
-                                value: FilterValue::Number(2.0),
+                                value: FilterValue::Number(100.0),
+                            };
+
+                            let sol_criteria = FilterCriteria {
+                                field: "size".to_string(),
+                                operation: ">".to_string(),
+                                    value: FilterValue::Number(30.0),
                             };
 
                             // Insert criteria into the HashMap
                             criteria_by_pair.insert("BTC-USD".to_string(), vec![btc_criteria]);
                             criteria_by_pair.insert("ETH-USD".to_string(), vec![eth_criteria]);
                             criteria_by_pair.insert("LINK-USD".to_string(), vec![link_criteria]);
+                            criteria_by_pair.insert("SOL-USD".to_string(), vec![sol_criteria]);
 
                             let param_filter = Arc::new(ParameterizedFilter::new(criteria_by_pair));
 
@@ -632,3 +644,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tokio::try_join!(polygon_ws_message_processing_task, polygon_dataflow_task, ws_server_task, alchemy_ws_message_processing_task, alchemy_dataflow_task);
     Ok(())
 }
+
+
+/*
+
+ERC-20 token transfers are identified by the input data starting with specific method signatures (also known as function selectors). These signatures are derived from the first four bytes of the hash of the function's signature. For ERC-20 tokens, the most crucial signatures to be aware of are for the transfer and transferFrom functions, as these are standard methods defined in the ERC-20 token standard for transferring tokens.
+
+Key ERC-20 Method Signatures:
+transfer(address,uint256):
+
+Method Signature: transfer(address _to, uint256 _value)
+Hash (Keccak-256): a9059cbb
+Description: This method is used to transfer _value amount of tokens to the address _to. The input data for a transaction calling this method will start with 0xa9059cbb.
+transferFrom(address,address,uint256):
+
+Method Signature: transferFrom(address _from, address _to, uint256 _value)
+Hash (Keccak-256): 23b872dd
+Description: This method is used to transfer _value amount of tokens from the address _from to the address _to, typically requiring prior approval from _from. The input data for a transaction calling this method will start with 0x23b872dd.
+Other Important ERC-20 Signatures:
+approve(address,uint256):
+
+Method Signature: approve(address _spender, uint256 _value)
+Hash (Keccak-256): 095ea7b3
+Description: This method is used to allow _spender to withdraw up to _value amount of tokens on your behalf. The input data for a transaction calling this method will start with 0x095ea7b3.
+allowance(address,address):
+
+Method Signature: allowance(address _owner, address _spender)
+Hash (Keccak-256): dd62ed3e
+Description: This method returns the remaining number of tokens that _spender is allowed to withdraw from _owner. This does not typically initiate transactions but is essential for understanding token allowances.
+balanceOf(address):
+
+Method Signature: balanceOf(address _owner)
+Hash (Keccak-256): ERC-20 token transfers are identified by the input data starting with specific method signatures (also known as function selectors). These signatures are derived from the first four bytes of the hash of the function's signature. For ERC-20 tokens, the most crucial signatures to be aware of are for the transfer and transferFrom functions, as these are standard methods defined in the ERC-20 token standard for transferring tokens.
+
+Key ERC-20 Method Signatures:
+transfer(address,uint256):
+
+Method Signature: transfer(address _to, uint256 _value)
+Hash (Keccak-256): a9059cbb
+Description: This method is used to transfer _value amount of tokens to the address _to. The input data for a transaction calling this method will start with 0xa9059cbb.
+transferFrom(address,address,uint256):
+
+Method Signature: transferFrom(address _from, address _to, uint256 _value)
+Hash (Keccak-256): 23b872dd
+Description: This method is used to transfer _value amount of tokens from the address _from to the address _to, typically requiring prior approval from _from. The input data for a transaction calling this method will start with 0x23b872dd.
+Other Important ERC-20 Signatures:
+approve(address,uint256):
+
+Method Signature: approve(address _spender, uint256 _value)
+Hash (Keccak-256): 095ea7b3
+Description: This method is used to allow _spender to withdraw up to _value amount of tokens on your behalf. The input data for a transaction calling this method will start with 0x095ea7b3.
+allowance(address,address):
+
+Method Signature: allowance(address _owner, address _spender)
+Hash (Keccak-256): dd62ed3e
+Description: This method returns the remaining number of tokens that _spender is allowed to withdraw from _owner. This does not typically initiate transactions but is essential for understanding token allowances.
+balanceOf(address):
+
+Method Signature: balanceOf(address _owner)
+Hash (Keccak-256): 70a08231
+Description: This method returns the token balance of _owner. Like allowance, it is used for querying state and not for initiating transactions.
+Description: This method returns the token balance of _owner. Like allowance, it is used for querying state and not for initiating transactions.
+
+
+*/
