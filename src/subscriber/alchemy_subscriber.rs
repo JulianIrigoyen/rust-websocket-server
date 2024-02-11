@@ -3,7 +3,7 @@ use serde_json::json;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream};
 use url::Url;
-
+///deprecated
 pub struct AlchemySubscriber {
     ws_url: String,
 }

@@ -34,7 +34,6 @@ pub async fn consume_stream<T: WebsocketEventTypes + Send + 'static>(
                                 }
                             } else {
                                 // Handle single event deserialization
-                                println!("ATTEMPTING TO DESERIALIZE {:?}", events);
                                 match T::deserialize_event(&events) {
                                     Ok(event) => {
                                         tx.send(event).expect("Failed to send event to the dataflow");
