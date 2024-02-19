@@ -1,7 +1,5 @@
 # Creating a Rust Websocket Server with Timely Dataflow
 
-As I set up this modest websocket server to get the rust off my Rust, I started remembering why I enjoyed working with it so much. Coming from writing a lot of Scala, Javascript, and .NET code, Rust has a feel to it that is quite hard to describe. It's fun. It feels powerful. The compiler messages are so… containing? More so than any other compile messages I’ve come across in 6 years. Pairing these detailed and concise messages the various available Rust books, building this proof of concept was an extremely fun and enlightening experience.
-
 **Motivation:** As my main portfolio project progresses, I am in need of a way to visualize financial asset data in a more insightful way. I had used timely dataflows in the past to build PoCs, so I’m aware of their power to give life to these streams of data in an elegant, really-hard-to-grasp-at-first way.
 
 But bear with me, we’ll go through it and soon you too will be creating dataflows for your streams!
