@@ -13,10 +13,13 @@ categories = ["web-programming", "asynchronous",  "crypto", "web3", "finance", "
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ethers = { version = "2.0", features = ["rustls", "ws"] }
+# Flexible concrete Error Reporting type built on std::error::Error with customizable Reports
+eyre = "0.6"
 # low-latency cyclic dataflow computational model, which allows for the development of streaming data processing and iterative computations. This crate provides a framework for writing programs that can process data as it arrives and can also iterate over data for algorithms that refine results over time.
 timely = "0.12"
 # runtime for writing reliable, asynchronous, and slim applications with the Rust programming language. It is built on the async/await syntax for asynchronous programming. The features specified (full, io-util, sync, rt-multi-thread) enable various utilities for I/O, synchronization primitives, and multi-threaded runtime support.
-tokio = { version = "1", features = ["full", "io-util", "sync", "rt-multi-thread"] }
+tokio = { version = "1", features = ["full", "io-util", "sync", "rt-multi-thread", "macros"] }
 # Rust implementation of the WebSocket protocol. This crate provides the core WebSocket capabilities used by tokio-tungstenite for both synchronous and asynchronous networking code.
 tungstenite = "0.21.0"
 # asynchronous WebSocket client and server library built on top of Tokio. It uses Tungstenite for WebSocket protocol support and provides async/await APIs for WebSocket communication. The native-tls feature enables TLS support for secure WebSocket connections.
@@ -25,6 +28,8 @@ tokio-tungstenite = { version = "*", features = ["native-tls"] }
 diesel = { version = "2.1.4", features = ["postgres", "r2d2", "serde_json"] }
 r2d2 = "0.8.9"
 
+
+uuid = { version = "1.7.0", features = ["v4", "fast-rng", "macro-diagnostics"]}
 
 #  framework for serializing and deserializing Rust data structures efficiently and generically. The derive feature enables the use of derive macros (Serialize, Deserialize) to automatically implement the serialization and deserialization code for custom data structures.
 serde = { version = "1.0", features = ["derive"] }
@@ -41,3 +46,8 @@ crossbeam-channel = "0.5"
 #Loads environment variables from a .env file into the process's environment variables.
 dotenv = "0.15.0"
 dotenv_codegen = "0.15.0"
+
+
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+async-trait = "0.1.77"
+lazy_static = "1.4.0"

@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::models::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
+use crate::models::polygon::polygon_crypto_aggregate_data::PolygonCryptoAggregateData;
 use serde::{Deserialize, Serialize};
 
-use crate::models::polygon_crypto_trade_data::PolygonCryptoTradeData;
-use crate::models::polygon_event_types::PolygonEventTypes;
+use crate::models::polygon::polygon_crypto_trade_data::PolygonCryptoTradeData;
+use crate::models::polygon::polygon_event_types::PolygonEventTypes;
 
-///This class structure illustrates a highly modular and scalable approach to filtering real-time financial data streams.
+/// This class structure illustrates a highly modular and scalable approach to filtering real-time financial data streams.
 
-///Enums with associated data (like Number and Text) allow for the representation of filter criteria values that can be of different types (e.g., numeric or textual), showcasing Rust's algebraic data types.
+/// Enums with associated data (like Number and Text) allow for the representation of filter criteria values that can be of different types (e.g., numeric or textual), showcasing Rust's algebraic data types.
 /// This enables the creation of flexible filters that can apply to various data fields.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum FilterValue {
@@ -30,16 +30,16 @@ pub struct FilterCriteria {
 
     Custom Criteria Mapping:
         The ParameterizedFilter struct uses a HashMap to associate cryptocurrency pairs with a vector of FilterCriteria.
-This mapping allows the application of multiple, distinct filtering criteria to different cryptocurrency pairs.
-It enables users to specify conditions under which a trade or aggregate data point should be considered relevant or ignored.
+            This mapping allows the application of multiple, distinct filtering criteria to different cryptocurrency pairs.
+            It enables users to specify conditions under which a trade or aggregate data point should be considered relevant or ignored.
 
     Dynamic Criterion Evaluation:
         The meets_criterion method dynamically evaluates whether a given trade meets the specified criteria.
-This evaluation is based on the trade's attributes, such as price and size, and the criterion's operation (e.g., greater than, less than, equal to). This dynamic evaluation supports various operations and makes the filter highly adaptable to different filtering needs.
+            This evaluation is based on the trade's attributes, such as price and size, and the criterion's operation (e.g., greater than, less than, equal to). This dynamic evaluation supports various operations and makes the filter highly adaptable to different filtering needs.
 
     Generic Filter Application:
         Through the implementation of the FilterFunction trait, ParameterizedFilter provides a generic apply method.
-This method determines applicability of the filter to any event within the data stream, enabling seamless integration into the data processing pipeline. It checks if the event matches the filter's criteria and applies the filter accordingly.
+            This method determines applicability of the filter to any event within the data stream, enabling seamless integration into the data processing pipeline. It checks if the event matches the filter's criteria and applies the filter accordingly.
 
  */
 pub struct ParameterizedFilter {
@@ -86,7 +86,7 @@ impl ParameterizedFilter {
     }
 }
 
-///Any struct implementing this trait must provide an apply method, enabling a consistent way to apply filters to data events.
+/// Any struct implementing this trait must provide an apply method, enabling a consistent way to apply filters to data events.
 pub trait FilterFunction {
     fn apply(&self, event: &PolygonEventTypes) -> bool;
 }
@@ -137,8 +137,9 @@ impl FilterFunction for PriceMovementFilter {
 
 /**
      The EventFilters sruct serves as a container for a collection of filters that are applied to incoming data streams.
-Each filter is encapsulated within an Arc<dyn FilterFunction>, allowing for shared ownership across threads and dynamic dispatch of the apply method defined by the FilterFunction trait.
+        Each filter is encapsulated within an Arc<dyn FilterFunction>, allowing for shared ownership across threads and dynamic dispatch of the apply method defined by the FilterFunction trait.
 */
+
 pub struct EventFilters {
     pub(crate) filters: Vec<Arc<dyn FilterFunction>>,
 }
