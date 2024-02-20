@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use futures_util::SinkExt;
+use futures_util::StreamExt;
 use serde_json::json;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, tungstenite::protocol::Message, WebSocketStream};
@@ -18,7 +19,7 @@ pub enum AuthMethod {
 
 pub struct WebSocketSubscriber<B: SubscriptionBuilder> {
     ws_url: String,
-    api_key: Option<String>, // API key is now optional
+    api_key: Option<String>,
     auth_method: AuthMethod,
     builder: B,
 }
@@ -38,7 +39,7 @@ impl<B: SubscriptionBuilder> WebSocketSubscriber<B> {
                 } else {
                     self.ws_url.clone()
                 }
-            },
+            }
             _ => self.ws_url.clone(),
         };
 
@@ -77,11 +78,56 @@ impl<B: SubscriptionBuilder> WebSocketSubscriber<B> {
 
         Ok(())
     }
+
+    // Method to subscribe to streams
+    pub async fn binance_subscribe_streams(
+        &self,
+        ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        streams: Vec<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        let message = json!({
+            "method": "SUBSCRIBE",
+            "params": streams,
+            "id": 1 // Consider generating unique IDs for each request
+        }).to_string();
+
+        ws_stream.send(Message::Text(message)).await?;
+        Ok(())
+    }
+
+    // Method to unsubscribe from streams
+    pub async fn binance_unsubscribe_streams(
+        &self,
+        ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        streams: Vec<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        let message = json!({
+            "method": "UNSUBSCRIBE",
+            "params": streams,
+            "id": 2 // Consider generating unique IDs for each request
+        }).to_string();
+
+        ws_stream.send(Message::Text(message)).await?;
+        Ok(())
+    }
+
+    // Method to list current subscriptions
+    pub async fn binance_list_subscriptions(
+        &self,
+        ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    ) -> Result<(), Box<dyn Error>> {
+        let message = json!({
+            "method": "LIST_SUBSCRIPTIONS",
+            "id": 3 // Consider generating unique IDs for each request
+        }).to_string();
+
+        ws_stream.send(Message::Text(message)).await?;
+        Ok(())
+    }
+
 }
 
 pub struct PolygonSubscriptionBuilder;
-pub struct BinanceSubscriptionBuilder;
-pub struct AlchemySubscriptionBuilder;
 
 impl SubscriptionBuilder for PolygonSubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {
@@ -93,10 +139,12 @@ impl SubscriptionBuilder for PolygonSubscriptionBuilder {
     }
 }
 
+pub struct BinanceSubscriptionBuilder;
+
 impl SubscriptionBuilder for BinanceSubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {
-        params.iter().flat_map(|&(base, ref topics)| {
-            let params: Vec<String> = topics.iter().map(|topic| format!("{}@{}", topic, base)).collect();
+        params.iter().flat_map(|&(symbol, ref streams)| {
+            let params: Vec<String> = streams.iter().map(|stream| format!("{}@{}", symbol, stream)).collect();
             vec![Message::Text(serde_json::to_string(&json!({
                 "method": "SUBSCRIBE",
                 "params": params,
@@ -105,6 +153,8 @@ impl SubscriptionBuilder for BinanceSubscriptionBuilder {
         }).collect()
     }
 }
+
+pub struct AlchemySubscriptionBuilder;
 
 impl SubscriptionBuilder for AlchemySubscriptionBuilder {
     fn build_subscription_messages(params: &[(&str, Vec<String>)]) -> Vec<Message> {

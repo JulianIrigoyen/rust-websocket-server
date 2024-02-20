@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IndividualSymbolBookTickerStream {
+pub struct IndividualSymbolBookTicker {
     #[serde(rename = "u")]
     pub update_id: u64, //  order book updateId
 
